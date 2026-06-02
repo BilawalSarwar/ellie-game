@@ -72,6 +72,41 @@
     box-shadow:0 4px 0 rgba(0,0,0,.12);
   }
   #muteBtn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.12);}
+  #pauseBtn{
+    position:absolute;top:14px;left:14px;z-index:6;
+    width:44px;height:44px;padding:0;border:none;cursor:pointer;
+    font-size:20px;line-height:44px;border-radius:50%;
+    background:rgba(255,251,243,.85);color:#4a3b3b;
+    box-shadow:0 4px 0 rgba(0,0,0,.12);
+  }
+  #pauseBtn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.12);}
+  .menu-btns{display:flex;flex-direction:column;gap:12px;width:min(80%,260px);}
+  .menu-btns button{width:100%;font-size:20px;padding:13px 20px;}
+  button.secondary{background:#7b86c9;box-shadow:0 6px 0 #535d96,0 10px 18px rgba(0,0,0,.2);}
+  button.secondary:active{box-shadow:0 2px 0 #535d96;}
+  button.ghostbtn{background:rgba(255,255,255,.9);color:#5a5570;box-shadow:0 5px 0 rgba(0,0,0,.12);}
+  .char-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:min(92%,330px);}
+  .char-card{
+    background:rgba(255,251,243,.95);border:3px solid transparent;border-radius:16px;
+    padding:10px 6px;cursor:pointer;text-align:center;color:#4a3b3b;font-weight:600;
+    box-shadow:0 5px 0 rgba(0,0,0,.08);transition:transform .08s;
+  }
+  .char-card .ce{font-size:34px;line-height:1;}
+  .char-card .cn{font-size:13px;margin-top:5px;}
+  .char-card .ct{font-size:10px;color:#8a7a6a;margin-top:2px;}
+  .char-card.sel{border-color:#f2994a;}
+  .char-card:active{transform:scale(.95);}
+  .setting-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0;font-weight:600;color:#4a3b3b;}
+  .seg{display:flex;border-radius:30px;overflow:hidden;border:2px solid #e0cba8;}
+  .seg button{font-size:13px;padding:7px 12px;border-radius:0;background:rgba(255,255,255,.7);color:#7a6a55;box-shadow:none;font-family:'Fredoka',sans-serif;font-weight:600;}
+  .seg button.on{background:#f2994a;color:#fff;}
+  .toggle{font-size:14px;padding:8px 16px;border-radius:30px;background:#cdb78f;box-shadow:none;}
+  .toggle.on{background:#6abf57;}
+  .scores-list{list-style:none;text-align:left;width:min(86%,300px);color:#4a3b3b;}
+  .scores-list li{display:flex;justify-content:space-between;padding:7px 10px;border-radius:10px;font-weight:600;}
+  .scores-list li:nth-child(odd){background:rgba(255,251,243,.6);}
+  .scores-list .rank{color:#e8843f;font-weight:800;margin-right:8px;}
+  .menu-title{font-family:'Baloo 2',cursive;font-weight:800;font-size:clamp(26px,6vw,36px);color:#fff;text-shadow:0 3px 0 #e89b4f,0 6px 10px rgba(0,0,0,.2);}
 </style>
 </head>
 <body>
@@ -79,24 +114,72 @@
   <canvas id="game"></canvas>
   <div id="hud" class="hidden">0</div>
   <button id="muteBtn" aria-label="toggle sound">🔊</button>
+  <button id="pauseBtn" class="hidden" aria-label="pause">⏸</button>
 
-  <div id="startScreen" class="overlay">
-    <div class="title">Ellie's<br>Bamboo Flight<small>🐘 a cute flappy adventure 🎋</small></div>
-    <div class="panel">
-      <div class="emoji">👻 🐘 🎋</div>
-      <p>A friendly ghost carries baby Ellie on a string! Flap to fly the ghost — it drifts through everything. But Ellie swings below, so steer so she clears the gaps!</p>
+  <!-- MAIN MENU -->
+  <div id="menuScreen" class="overlay">
+    <div class="title">Ellie's<br>Bamboo Flight<small>🎋 a cute flappy adventure 🎋</small></div>
+    <div class="menu-btns">
+      <button id="mNew">New Game</button>
+      <button id="mResume" class="secondary hidden">Resume</button>
+      <button id="mChar" class="ghostbtn">Character</button>
+      <button id="mScores" class="ghostbtn">Top Scores</button>
+      <button id="mSettings" class="ghostbtn">Settings</button>
     </div>
-    <div class="hint">tap / click / press space to flap</div>
-    <button id="startBtn">Play!</button>
   </div>
 
+  <!-- CHARACTER SELECT -->
+  <div id="charScreen" class="overlay hidden">
+    <div class="menu-title">Choose a Flyer</div>
+    <div class="char-grid" id="charGrid"></div>
+    <button id="charBack" class="ghostbtn" style="margin-top:6px">Back</button>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="settingsScreen" class="overlay hidden">
+    <div class="menu-title">Settings</div>
+    <div class="panel" style="max-width:300px">
+      <div class="setting-row"><span>Sound effects</span><button id="setSfx" class="toggle on">On</button></div>
+      <div class="setting-row"><span>Music</span><button id="setMusic" class="toggle on">On</button></div>
+      <div class="setting-row"><span>Difficulty</span>
+        <span class="seg" id="setDiff">
+          <button data-d="easy">Easy</button>
+          <button data-d="normal" class="on">Normal</button>
+          <button data-d="hard">Hard</button>
+        </span>
+      </div>
+    </div>
+    <button id="setBack" class="ghostbtn">Back</button>
+  </div>
+
+  <!-- TOP SCORES -->
+  <div id="scoresScreen" class="overlay hidden">
+    <div class="menu-title">Top Scores</div>
+    <ol class="scores-list" id="scoresList"></ol>
+    <button id="scoresBack" class="ghostbtn">Back</button>
+  </div>
+
+  <!-- PAUSE -->
+  <div id="pauseScreen" class="overlay hidden">
+    <div class="menu-title">Paused</div>
+    <div class="menu-btns">
+      <button id="pResume">Resume</button>
+      <button id="pRestart" class="secondary">Restart</button>
+      <button id="pMenu" class="ghostbtn">Main Menu</button>
+    </div>
+  </div>
+
+  <!-- GAME OVER -->
   <div id="overScreen" class="overlay hidden">
     <div class="title" style="font-size:clamp(30px,7vw,42px)">Oops! 💫</div>
     <div class="panel">
       <div class="score-big" id="finalScore">0</div>
       <div class="best" id="bestScore">Best: 0</div>
     </div>
-    <button id="retryBtn">Try Again</button>
+    <div class="menu-btns">
+      <button id="retryBtn">Try Again</button>
+      <button id="overMenu" class="ghostbtn">Main Menu</button>
+    </div>
   </div>
 </div>
 
@@ -106,18 +189,27 @@
   const ctx = cv.getContext('2d');
   const wrap = document.getElementById('wrap');
   const hud = document.getElementById('hud');
-  const startScreen = document.getElementById('startScreen');
   const overScreen = document.getElementById('overScreen');
-  const startBtn = document.getElementById('startBtn');
   const retryBtn = document.getElementById('retryBtn');
   const finalScore = document.getElementById('finalScore');
   const bestScoreEl = document.getElementById('bestScore');
   const muteBtn = document.getElementById('muteBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const $ = id => document.getElementById(id);
+  const screens = {
+    menu: $('menuScreen'), char: $('charScreen'), settings: $('settingsScreen'),
+    scores: $('scoresScreen'), pause: $('pauseScreen'), over: overScreen
+  };
+  function showScreen(name){
+    Object.values(screens).forEach(s=>s.classList.add('hidden'));
+    if(name && screens[name]) screens[name].classList.remove('hidden');
+  }
 
   // ===================== AUDIO ENGINE (procedural, no files) =====================
   const Audio = (() => {
     let actx = null, master = null, musicGain = null, sfxGain = null;
     let muted = false, started = false, musicTimer = null, step = 0;
+    let sfxOn = true, musicOn = true;
 
     function ensure(){
       if(actx) return;
@@ -191,12 +283,14 @@
     function stopMusic(){ if(musicTimer){ clearInterval(musicTimer); musicTimer = null; } }
 
     return {
-      unlock(){ resume(); if(!started){ started = true; if(!muted) startMusic(); } },
-      play(name){ resume(); if(sfx[name]) sfx[name](); },
+      unlock(){ resume(); if(!started){ started = true; if(!muted && musicOn) startMusic(); } },
+      play(name){ if(!sfxOn) return; resume(); if(sfx[name]) sfx[name](); },
+      setSfx(on){ sfxOn=on; },
+      setMusic(on){ musicOn=on; if(!on) stopMusic(); else if(started && !muted) startMusic(); },
       toggleMute(){
         muted = !muted;
         if(muted){ stopMusic(); }
-        else { resume(); if(started) startMusic(); }
+        else { resume(); if(started && musicOn) startMusic(); }
         return muted;
       },
       get muted(){ return muted; }
@@ -232,14 +326,53 @@
   const GRAV   = 1500;     // px/s^2
   const FLAP   = -430;     // px/s impulse
   const PIPE_W = 72;
-  const GAP    = 195;
+  let   GAP    = 195;      // gap height (set by difficulty)
   const SPACING= 250;      // horizontal distance between obstacles
-  const BASE_SPEED = 150;  // px/s scroll speed
+  let   BASE_SPEED = 150;  // px/s scroll speed (set by difficulty)
 
-  let state = 'ready';     // ready | playing | over
+  let state = 'menu';      // menu | playing | paused | over
   let best = 0;
   let score, time, ellie, ghost, obstacles, speed, pickups, powers;
   let scenery; // parallax background layers
+
+  // ===================== PERSISTENT STORAGE (safe) =====================
+  const Store = {
+    get(key, def){
+      try{ const v=localStorage.getItem('ebf_'+key); return v==null?def:JSON.parse(v); }
+      catch(e){ return (this._mem&&this._mem[key]!=null)?this._mem[key]:def; }
+    },
+    set(key, val){
+      try{ localStorage.setItem('ebf_'+key, JSON.stringify(val)); }
+      catch(e){ (this._mem=this._mem||{})[key]=val; }
+    },
+    _mem:{}
+  };
+
+  // ===================== CHARACTERS =====================
+  // carried:true -> ghost holds it on a string (pendulum). carried:false -> it flies itself.
+  const CHARACTERS = {
+    elephant:{ name:'Ellie',  emoji:'🐘', tag:'carried by ghost', carried:true,  draw:'elephant' },
+    teddy:   { name:'Teddy',  emoji:'🧸', tag:'carried by ghost', carried:true,  draw:'teddy' },
+    hen:     { name:'Hen',    emoji:'🐔', tag:'heavy flyer',       carried:false, draw:'hen',    flap:-410, grav:1700 },
+    pigeon:  { name:'Pigeon', emoji:'🕊️', tag:'steady flyer',      carried:false, draw:'pigeon', flap:-430, grav:1500 },
+    eagle:   { name:'Eagle',  emoji:'🦅', tag:'floaty & fast',     carried:false, draw:'eagle',  flap:-440, grav:1250 }
+  };
+  let charKey = Store.get('char','elephant');
+
+  // ===================== SETTINGS =====================
+  const DIFF = {
+    easy:  { gap:235, speed:130 },
+    normal:{ gap:195, speed:150 },
+    hard:  { gap:165, speed:178 }
+  };
+  let settings = Store.get('settings', { sfx:true, music:true, diff:'normal' });
+  function applyDifficulty(){
+    const d=DIFF[settings.diff]||DIFF.normal;
+    GAP=d.gap; BASE_SPEED=d.speed;
+  }
+  applyDifficulty();
+  Audio.setSfx(settings.sfx);
+  Audio.setMusic(settings.music);
 
   // ===================== SCENERY (parallax background) =====================
   // layer: 0 = far buildings, 1 = hills/trees, 2 = water strip near ground
@@ -340,18 +473,18 @@
   // ===================== LIFECYCLE =====================
   function reset(){
     score = 0; time = 0; speed = BASE_SPEED;
-    // Ghost is what the player controls; the baby elephant dangles below on a
-    // string as a pendulum bob. Only the elephant collides; the ghost is intangible.
-    ghost = { x: W*0.30, y: H*0.40, vy: 0, flap: 0 };
-    const L = 92;                       // string length
-    ellie = {
-      r: 22,
-      baseR: 22,
-      string: L,
-      a: 0,                             // pendulum angle from straight-down (rad)
-      av: 0,                            // angular velocity
-      x: ghost.x, y: ghost.y + L, rot: 0
-    };
+    applyDifficulty();
+    const ch = CHARACTERS[charKey];
+    if(ch.carried){
+      // ghost carries the character on a string (pendulum)
+      ghost = { x: W*0.30, y: H*0.40, vy: 0, flap: 0 };
+      const L = 92;
+      ellie = { r:22, baseR:22, string:L, a:0, av:0, x:ghost.x, y:ghost.y+L, rot:0, carried:true };
+    } else {
+      // the character flies itself (classic flap)
+      ghost = null;
+      ellie = { r:22, baseR:22, x:W*0.30, y:H*0.45, vy:0, rot:0, flap:0, carried:false };
+    }
     obstacles = [];
     pickups = [];
     powers = { invincible:0, tiny:0, slowmo:0, shield:false };
@@ -385,31 +518,137 @@
   }
 
   function flap(){
-    if(state === 'ready'){ start(); return; }
-    if(state === 'playing'){ ghost.vy = FLAP; ghost.flap = 1; Audio.play('flap'); }
+    if(state !== 'playing') return;
+    const ch=CHARACTERS[charKey];
+    if(ch.carried){ ghost.vy = FLAP; ghost.flap = 1; }
+    else { ellie.vy = (ch.flap||FLAP); ellie.flap = 1; }
+    Audio.play('flap');
   }
-  function start(){
+  function startGame(){
     Audio.unlock();
     reset(); state='playing';
-    startScreen.classList.add('hidden');
-    overScreen.classList.add('hidden');
+    showScreen(null);
     hud.classList.remove('hidden');
+    pauseBtn.classList.remove('hidden');
+  }
+  function pauseGame(){
+    if(state!=='playing') return;
+    state='paused';
+    pauseBtn.classList.add('hidden');
+    showScreen('pause');
+  }
+  function resumeGame(){
+    if(state!=='paused') return;
+    state='playing';
+    lastT = performance.now(); acc = 0;   // avoid a physics jump after pause
+    showScreen(null);
+    pauseBtn.classList.remove('hidden');
+  }
+  function toMenu(keepPaused){
+    if(keepPaused && state==='paused'){
+      // keep the run alive in the background; menu's Resume will continue it
+    } else {
+      state='menu';
+    }
+    pauseBtn.classList.add('hidden');
+    hud.classList.add('hidden');
+    refreshMenu();
+    showScreen('menu');
   }
   function gameOver(){
     Audio.play('hit');
-    state='over'; best=Math.max(best,score);
+    state='over';
+    const key='best_'+charKey;
+    best=Math.max(Store.get(key,0), score);
+    Store.set(key, best);
+    recordScore(score);
     finalScore.textContent = score;
-    bestScoreEl.textContent = 'Best: '+best;
+    bestScoreEl.textContent = 'Best ('+CHARACTERS[charKey].name+'): '+best;
     hud.classList.add('hidden');
-    overScreen.classList.remove('hidden');
+    pauseBtn.classList.add('hidden');
+    showScreen('over');
+  }
+
+  // ---- top scores (per device) ----
+  function recordScore(s){
+    if(s<=0) return;
+    let list=Store.get('scores',[]);
+    list.push({ s, c:charKey, t:Date.now() });
+    list.sort((a,b)=>b.s-a.s);
+    list=list.slice(0,8);
+    Store.set('scores', list);
+  }
+  function renderScores(){
+    const list=Store.get('scores',[]);
+    const el=$('scoresList');
+    if(!list.length){ el.innerHTML='<li><span>No scores yet — go fly!</span></li>'; return; }
+    el.innerHTML = list.map((r,i)=>{
+      const ch=CHARACTERS[r.c]||{emoji:'❓',name:'?'};
+      return '<li><span><span class="rank">'+(i+1)+'</span>'+ch.emoji+' '+ch.name+'</span><b>'+r.s+'</b></li>';
+    }).join('');
   }
 
   // ---- input ----
-  function press(e){ e.preventDefault(); flap(); }
+  function press(e){
+    // tapping the canvas only flaps during play; menus use their own buttons
+    if(state==='playing'){ e.preventDefault(); flap(); }
+  }
   cv.addEventListener('pointerdown', press);
-  window.addEventListener('keydown', e=>{ if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); flap(); }});
-  startBtn.addEventListener('click', e=>{ e.stopPropagation(); start(); });
-  retryBtn.addEventListener('click', e=>{ e.stopPropagation(); start(); });
+  window.addEventListener('keydown', e=>{
+    if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); if(state==='playing') flap(); }
+    if(e.code==='Escape'){ if(state==='playing') pauseGame(); else if(state==='paused') resumeGame(); }
+  });
+
+  // menu buttons
+  $('mNew').addEventListener('click', e=>{ e.stopPropagation(); startGame(); });
+  $('mResume').addEventListener('click', e=>{ e.stopPropagation(); resumeGame(); });
+  $('mChar').addEventListener('click', e=>{ e.stopPropagation(); renderCharGrid(); showScreen('char'); });
+  $('mScores').addEventListener('click', e=>{ e.stopPropagation(); renderScores(); showScreen('scores'); });
+  $('mSettings').addEventListener('click', e=>{ e.stopPropagation(); renderSettings(); showScreen('settings'); });
+  $('charBack').addEventListener('click', e=>{ e.stopPropagation(); showScreen('menu'); });
+  $('scoresBack').addEventListener('click', e=>{ e.stopPropagation(); showScreen('menu'); });
+  $('setBack').addEventListener('click', e=>{ e.stopPropagation(); showScreen('menu'); });
+
+  // pause / over buttons
+  pauseBtn.addEventListener('click', e=>{ e.stopPropagation(); pauseGame(); });
+  $('pResume').addEventListener('click', e=>{ e.stopPropagation(); resumeGame(); });
+  $('pRestart').addEventListener('click', e=>{ e.stopPropagation(); startGame(); });
+  $('pMenu').addEventListener('click', e=>{ e.stopPropagation(); toMenu(true); });
+  retryBtn.addEventListener('click', e=>{ e.stopPropagation(); startGame(); });
+  $('overMenu').addEventListener('click', e=>{ e.stopPropagation(); state='over'; toMenu(false); });
+
+  // character grid
+  function renderCharGrid(){
+    const grid=$('charGrid');
+    grid.innerHTML = Object.entries(CHARACTERS).map(([k,c])=>
+      '<div class="char-card'+(k===charKey?' sel':'')+'" data-k="'+k+'">'+
+      '<div class="ce">'+c.emoji+'</div><div class="cn">'+c.name+'</div><div class="ct">'+c.tag+'</div></div>'
+    ).join('');
+    grid.querySelectorAll('.char-card').forEach(card=>{
+      card.addEventListener('click', e=>{
+        e.stopPropagation();
+        charKey=card.dataset.k; Store.set('char',charKey);
+        renderCharGrid();
+      });
+    });
+  }
+
+  // settings
+  function renderSettings(){
+    $('setSfx').className='toggle'+(settings.sfx?' on':''); $('setSfx').textContent=settings.sfx?'On':'Off';
+    $('setMusic').className='toggle'+(settings.music?' on':''); $('setMusic').textContent=settings.music?'On':'Off';
+    $('setDiff').querySelectorAll('button').forEach(b=> b.className=(b.dataset.d===settings.diff?'on':''));
+  }
+  $('setSfx').addEventListener('click', e=>{ e.stopPropagation(); settings.sfx=!settings.sfx; Store.set('settings',settings); Audio.setSfx(settings.sfx); renderSettings(); });
+  $('setMusic').addEventListener('click', e=>{ e.stopPropagation(); settings.music=!settings.music; Store.set('settings',settings); Audio.setMusic(settings.music); renderSettings(); });
+  $('setDiff').querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', e=>{ e.stopPropagation(); settings.diff=b.dataset.d; Store.set('settings',settings); applyDifficulty(); renderSettings(); });
+  });
+
+  function refreshMenu(){
+    // show Resume only when a game is paused
+    $('mResume').classList.toggle('hidden', state!=='paused');
+  }
 
   // ===================== DRAW HELPERS =====================
   function roundRect(x,y,w,h,r){
@@ -779,31 +1018,117 @@
     }
     ctx.save(); ctx.translate(e.x,e.y); ctx.rotate(e.rot);
     const s=0.8*(e.r/(e.baseR||22)); ctx.scale(s,s);
+    const draw=CHARACTERS[charKey].draw;
+    if(draw==='elephant') drawCharElephant(e);
+    else if(draw==='teddy') drawCharTeddy(e);
+    else if(draw==='hen') drawCharHen(e);
+    else if(draw==='pigeon') drawCharPigeon(e);
+    else if(draw==='eagle') drawCharEagle(e);
+    ctx.restore();
+  }
+
+  function drawCharElephant(e){
     const earBeat=Math.sin(time*5)*0.12;
-    // far ear
     ctx.save(); ctx.translate(-2,-4); ctx.rotate(-0.35-earBeat);
     ctx.fillStyle='#aecbe4'; ctx.beginPath(); ctx.ellipse(-15,2,15,19,0.2,0,7); ctx.fill();
     ctx.restore();
-    // body
     ctx.fillStyle='#c9dcee'; ctx.beginPath(); ctx.ellipse(0,4,23,21,0,0,7); ctx.fill();
-    // head
     ctx.fillStyle='#cfe0f0'; ctx.beginPath(); ctx.arc(8,-6,18,0,7); ctx.fill();
-    // trunk (curls toward the string)
     ctx.strokeStyle='#cfe0f0'; ctx.lineWidth=10; ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(18,-12); ctx.quadraticCurveTo(30,-20,24,-30); ctx.stroke();
-    // near ear
     ctx.save(); ctx.translate(6,-4); ctx.rotate(0.3+earBeat);
     ctx.fillStyle='#bcd4e8'; ctx.beginPath(); ctx.ellipse(-12,2,15,19,-0.15,0,7); ctx.fill();
     ctx.fillStyle='#d9b6c9'; ctx.beginPath(); ctx.ellipse(-12,3,8,11,-0.15,0,7); ctx.fill();
     ctx.restore();
-    // eye
     ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(13,-9,5,0,7); ctx.fill();
     ctx.fillStyle='#3a3340'; ctx.beginPath(); ctx.arc(14,-8,2.6,0,7); ctx.fill();
     ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(15,-9.5,1,0,7); ctx.fill();
     ctx.fillStyle='rgba(240,160,170,.55)'; ctx.beginPath(); ctx.arc(4,2,4.5,0,7); ctx.fill();
-    // feet
     ctx.fillStyle='#b6cfe6'; ctx.beginPath(); ctx.ellipse(-8,22,6,4,0,0,7); ctx.ellipse(8,22,6,4,0,0,7); ctx.fill();
-    ctx.restore();
+  }
+
+  function drawCharTeddy(e){
+    const earBeat=Math.sin(time*5)*0.06;
+    // ears
+    ctx.fillStyle='#a9794f';
+    ctx.beginPath(); ctx.arc(-14,-16,8,0,7); ctx.arc(14,-16,8,0,7); ctx.fill();
+    ctx.fillStyle='#c79a6a';
+    ctx.beginPath(); ctx.arc(-14,-16,4,0,7); ctx.arc(14,-16,4,0,7); ctx.fill();
+    // body + head
+    ctx.fillStyle='#b9824f'; ctx.beginPath(); ctx.ellipse(0,8,20,19,0,0,7); ctx.fill();
+    ctx.fillStyle='#c99a64'; ctx.beginPath(); ctx.arc(0,-6,18,0,7); ctx.fill();
+    // muzzle
+    ctx.fillStyle='#ecd6b2'; ctx.beginPath(); ctx.ellipse(0,0,9,7,0,0,7); ctx.fill();
+    ctx.fillStyle='#5a3a22'; ctx.beginPath(); ctx.ellipse(0,-3,3,2.2,0,0,7); ctx.fill();
+    // eyes
+    ctx.fillStyle='#3a2418'; ctx.beginPath(); ctx.arc(-7,-9,2.4,0,7); ctx.arc(7,-9,2.4,0,7); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(-6,-10,0.9,0,7); ctx.arc(8,-10,0.9,0,7); ctx.fill();
+    // arms/paws
+    ctx.fillStyle='#a9794f'; ctx.beginPath(); ctx.arc(-18,6,6,0,7); ctx.arc(18,6,6,0,7); ctx.fill();
+    ctx.fillStyle='rgba(240,160,170,.4)'; ctx.beginPath(); ctx.arc(-9,2,3.5,0,7); ctx.arc(9,2,3.5,0,7); ctx.fill();
+  }
+
+  function wingFlap(e){ // returns wing angle for flyers, based on flap impulse + idle beat
+    return Math.sin(time*16)*0.5 + (e.flap||0)*0.9;
+  }
+
+  function drawCharHen(e){
+    const w=wingFlap(e);
+    // body (plump)
+    ctx.fillStyle='#f3f0ea'; ctx.beginPath(); ctx.ellipse(0,4,22,18,0,0,7); ctx.fill();
+    // tail
+    ctx.fillStyle='#d8d2c6'; ctx.beginPath(); ctx.moveTo(-18,-2); ctx.quadraticCurveTo(-34,-14,-26,4); ctx.quadraticCurveTo(-30,10,-16,8); ctx.fill();
+    // wing
+    ctx.save(); ctx.translate(-2,2); ctx.rotate(-0.2+w*0.4);
+    ctx.fillStyle='#e3ddd0'; ctx.beginPath(); ctx.ellipse(0,0,15,10,0,0,7); ctx.fill(); ctx.restore();
+    // head
+    ctx.fillStyle='#f7f4ee'; ctx.beginPath(); ctx.arc(14,-12,12,0,7); ctx.fill();
+    // comb
+    ctx.fillStyle='#e0584f'; ctx.beginPath(); ctx.arc(12,-22,3,0,7); ctx.arc(17,-23,3,0,7); ctx.arc(22,-21,3,0,7); ctx.fill();
+    // beak + wattle
+    ctx.fillStyle='#f2a93b'; ctx.beginPath(); ctx.moveTo(24,-12); ctx.lineTo(34,-9); ctx.lineTo(24,-6); ctx.fill();
+    ctx.fillStyle='#e0584f'; ctx.beginPath(); ctx.ellipse(22,-3,3,5,0,0,7); ctx.fill();
+    // eye
+    ctx.fillStyle='#2a2420'; ctx.beginPath(); ctx.arc(17,-13,2.4,0,7); ctx.fill();
+  }
+
+  function drawCharPigeon(e){
+    const w=wingFlap(e);
+    ctx.fillStyle='#9fb0c4'; ctx.beginPath(); ctx.ellipse(0,4,21,16,0,0,7); ctx.fill();
+    ctx.fillStyle='#7d90a8'; ctx.beginPath(); ctx.moveTo(-16,0); ctx.quadraticCurveTo(-30,-2,-28,8); ctx.quadraticCurveTo(-24,12,-14,8); ctx.fill();
+    ctx.save(); ctx.translate(-2,2); ctx.rotate(-0.25+w*0.5);
+    ctx.fillStyle='#8ba0b8'; ctx.beginPath(); ctx.ellipse(0,0,16,9,0,0,7); ctx.fill(); ctx.restore();
+    ctx.fillStyle='#aebed0'; ctx.beginPath(); ctx.arc(15,-10,11,0,7); ctx.fill();
+    // iridescent neck
+    ctx.fillStyle='rgba(120,200,170,.5)'; ctx.beginPath(); ctx.ellipse(8,-2,7,8,0,0,7); ctx.fill();
+    ctx.fillStyle='#e8a23b'; ctx.beginPath(); ctx.moveTo(25,-10); ctx.lineTo(33,-8); ctx.lineTo(25,-6); ctx.fill();
+    ctx.fillStyle='#2a2420'; ctx.beginPath(); ctx.arc(18,-11,2.3,0,7); ctx.fill();
+    ctx.fillStyle='#e7654f'; ctx.beginPath(); ctx.arc(18,-11,3.4,0,7); ctx.fill();
+    ctx.fillStyle='#2a2420'; ctx.beginPath(); ctx.arc(18,-11,2,0,7); ctx.fill();
+  }
+
+  function drawCharEagle(e){
+    const w=wingFlap(e);
+    // big wings spread
+    ctx.fillStyle='#6b4a2f';
+    ctx.save(); ctx.translate(-4,0); ctx.rotate(-0.4+w*0.6);
+    ctx.beginPath(); ctx.ellipse(-14,0,22,11,0,0,7); ctx.fill(); ctx.restore();
+    // body
+    ctx.fillStyle='#7a5638'; ctx.beginPath(); ctx.ellipse(0,4,20,16,0,0,7); ctx.fill();
+    // tail
+    ctx.fillStyle='#e9e4da'; ctx.beginPath(); ctx.moveTo(-16,2); ctx.lineTo(-30,2); ctx.lineTo(-16,10); ctx.fill();
+    // white head
+    ctx.fillStyle='#f4f1ea'; ctx.beginPath(); ctx.arc(15,-10,12,0,7); ctx.fill();
+    // beak
+    ctx.fillStyle='#f2b53b'; ctx.beginPath(); ctx.moveTo(24,-12); ctx.quadraticCurveTo(36,-10,26,-4); ctx.lineTo(24,-7); ctx.fill();
+    // eye + brow (fierce)
+    ctx.fillStyle='#caa23a'; ctx.beginPath(); ctx.arc(17,-12,3,0,7); ctx.fill();
+    ctx.fillStyle='#2a2420'; ctx.beginPath(); ctx.arc(18,-12,1.6,0,7); ctx.fill();
+    ctx.strokeStyle='#caa23a'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(12,-15); ctx.lineTo(20,-14); ctx.stroke();
+    // near wing
+    ctx.fillStyle='#8a623f';
+    ctx.save(); ctx.translate(0,2); ctx.rotate(0.3-w*0.5);
+    ctx.beginPath(); ctx.ellipse(-6,2,20,10,0,0,7); ctx.fill(); ctx.restore();
   }
 
   // ===================== COLLISION =====================
@@ -854,34 +1179,41 @@
       const g=ghost, e=ellie;
       // effective scroll speed (slow-mo halves it)
       const spd = speed * (powers.slowmo>0 ? 0.5 : 1);
-      // tiny power shrinks the elephant's collision + draw size
+      // tiny power shrinks the character's collision + draw size
       e.r = (powers.tiny>0 ? e.baseR*0.55 : e.baseR);
 
-      // --- ghost: same float feel as before, kept on-screen, intangible ---
-      const prevGY = g.y;
-      g.vy += GRAV*dt;
-      g.y  += g.vy*dt;
-      g.flap = Math.max(0, g.flap - dt*4);
-      // soft bounds so the ghost can't leave the playfield
-      if(g.y < 30){ g.y=30; if(g.vy<0) g.vy=0; }
-      if(g.y > H-GROUND_H-30){ g.y=H-GROUND_H-30; if(g.vy>0) g.vy=0; }
-      const ghostAY = (g.y - prevGY)/dt; // vertical velocity for pendulum forcing
-
-      // --- elephant: pendulum bob hanging from the ghost ---
-      const Lp = e.string;
-      const grav = 26;                          // pendulum gravity strength
-      const drive = -ghostAY * 0.010;           // ghost motion pushes the swing
-      const aacc = -(grav/Lp)*Math.sin(e.a) + drive*Math.cos(e.a);
-      e.av += aacc*dt;
-      e.av *= (1 - 1.4*dt);                     // damping so it settles
-      e.av = Math.max(-6, Math.min(6, e.av));
-      e.a  += e.av*dt;
-      const maxA = 1.15;
-      if(e.a> maxA){ e.a= maxA; e.av*=-0.3; }
-      if(e.a<-maxA){ e.a=-maxA; e.av*=-0.3; }
-      e.x = g.x + Math.sin(e.a)*Lp;
-      e.y = g.y + Math.cos(e.a)*Lp;
-      e.rot = e.a*0.5;
+      if(e.carried){
+        // --- ghost: float feel, kept on-screen, intangible ---
+        const prevGY = g.y;
+        g.vy += GRAV*dt;
+        g.y  += g.vy*dt;
+        g.flap = Math.max(0, g.flap - dt*4);
+        if(g.y < 30){ g.y=30; if(g.vy<0) g.vy=0; }
+        if(g.y > H-GROUND_H-30){ g.y=H-GROUND_H-30; if(g.vy>0) g.vy=0; }
+        const ghostAY = (g.y - prevGY)/dt;
+        // --- character: pendulum bob hanging from the ghost ---
+        const Lp = e.string;
+        const grav = 26;
+        const drive = -ghostAY * 0.010;
+        const aacc = -(grav/Lp)*Math.sin(e.a) + drive*Math.cos(e.a);
+        e.av += aacc*dt;
+        e.av *= (1 - 1.4*dt);
+        e.av = Math.max(-6, Math.min(6, e.av));
+        e.a  += e.av*dt;
+        const maxA = 1.15;
+        if(e.a> maxA){ e.a= maxA; e.av*=-0.3; }
+        if(e.a<-maxA){ e.a=-maxA; e.av*=-0.3; }
+        e.x = g.x + Math.sin(e.a)*Lp;
+        e.y = g.y + Math.cos(e.a)*Lp;
+        e.rot = e.a*0.5;
+      } else {
+        // --- flyer: classic flap with per-character gravity ---
+        const ch=CHARACTERS[charKey];
+        e.vy += (ch.grav||GRAV)*dt;
+        e.y  += e.vy*dt;
+        e.rot = Math.max(-0.5, Math.min(1.1, e.vy*0.0011));
+        e.flap = Math.max(0, e.flap - dt*4);
+      }
 
       obstacles.forEach(o=>{
         o.x -= spd*dt;
@@ -933,19 +1265,11 @@
         }
       }
     } else if(state==='over'){
-      // string snaps: the baby elephant tumbles down
+      // character tumbles down; if it was carried, the ghost drifts up sadly
       const e=ellie;
       e.fallVy = (e.fallVy||0) + GRAV*dt;
       if(e.y+e.r < H-GROUND_H){ e.y += e.fallVy*dt; e.rot += dt*3; }
-      // ghost drifts gently upward, sad
-      ghost.y -= 20*dt;
-    } else if(state==='ready'){
-      // gentle idle: ghost bobs, elephant hangs straight below
-      ghost.y = H*0.40 + Math.sin(time*2.2)*8;
-      ellie.a = Math.sin(time*1.3)*0.12;
-      ellie.x = ghost.x + Math.sin(ellie.a)*ellie.string;
-      ellie.y = ghost.y + Math.cos(ellie.a)*ellie.string;
-      ellie.rot = ellie.a*0.5;
+      if(ghost) ghost.y -= 20*dt;
     }
   }
 
@@ -974,12 +1298,15 @@
   function render(){
     ctx.clearRect(0,0,W,H);
     drawBackground();
+    // when on the main menu / submenus (and no run in progress), show a calm backdrop only
+    if(state==='menu'){ drawGround(); return; }
     obstacles.forEach(drawObstacle);
     drawPickups();
     drawGround();
-    if(state!=='over') drawString();
+    const carried = ellie && ellie.carried;
+    if(carried && state!=='over'){ drawString(); }
     drawEllie();
-    if(state!=='over') drawGhost();
+    if(carried && state!=='over'){ drawGhost(); }
     drawPowerHUD();
   }
 
@@ -1004,7 +1331,13 @@
     render();
     requestAnimationFrame(loop);
   }
-  reset();
+  // start on the main menu
+  makeScenery();                 // backdrop for the menu
+  speed = BASE_SPEED;            // gentle drift on the menu backdrop
+  time = 0;
+  best = Store.get('best_'+charKey, 0);
+  refreshMenu();
+  showScreen('menu');
   requestAnimationFrame(loop);
 })();
 </script>
