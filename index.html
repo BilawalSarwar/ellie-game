@@ -632,9 +632,15 @@
   // ===================== COLLISION =====================
   function circleHitsColumns(o, topSolidTo, botSolidFrom){
     const e=ellie;
-    if(e.x + e.r*0.7 > o.x && e.x - e.r*0.7 < o.x + PIPE_W){
-      if(topSolidTo!=null && e.y - e.r*0.8 < topSolidTo) return true;
-      if(botSolidFrom!=null && e.y + e.r*0.8 > botSolidFrom) return true;
+    // Horizontal overlap with the stalk, using a snug body half-width and an
+    // inset solid span so the stalk's very edges don't act as an invisible wall
+    // as it scrolls past Ellie.
+    const half = e.r*0.6;
+    const left = o.x + 4;
+    const right = o.x + PIPE_W - 4;
+    if(e.x + half > left && e.x - half < right){
+      if(topSolidTo!=null && e.y - e.r*0.78 < topSolidTo) return true;
+      if(botSolidFrom!=null && e.y + e.r*0.78 > botSolidFrom) return true;
     }
     return false;
   }
