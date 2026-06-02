@@ -301,13 +301,13 @@
 
     if(type === 'spider'){
       const dropMin = 36;
-      const dropMax = gapY + GAP*0.35;   // never dives deep into the gap; leaves clear room below
+      const dropMax = gapY + GAP*0.28;   // stays in the upper third; big clear lane below
       // Two kinds of spider:
       //  - 'glide': drifts slowly up and down (most common, gentle)
-      //  - 'fall' : hangs near the top, then suddenly drops, pauses, reels back up
+      //  - 'fall' : hangs near the top, then drops, pauses, reels back up
       const sudden = Math.random() < 0.4;
       o.spider = {
-        r: 16,
+        r: 14,
         dropMin, dropMax,
         drop: dropMin,
         mode: sudden ? 'fall' : 'glide',
@@ -316,8 +316,8 @@
         // fall-mode state machine
         fallState: 'hang',                 // hang -> dropping -> bottom -> rising
         timer: 0.6 + Math.random()*1.2,    // seconds to wait before first drop
-        dropSpeed: 150 + Math.random()*60, // px/s while falling (gentle, visible)
-        riseSpeed: 70 + Math.random()*30   // px/s while reeling back up (slower)
+        dropSpeed: 90 + Math.random()*40,  // px/s while falling (slow & clearly visible)
+        riseSpeed: 60 + Math.random()*25   // px/s while reeling back up
       };
     } else if(type === 'ladybugs'){
       // ladybug clusters that FILL the top and bottom barriers (visual matches collision)
@@ -668,7 +668,7 @@
         // under the spider never counts as a hit (legs are decorative, not solid).
         const cx=o.x+PIPE_W/2, by=o.spider.drop+6;
         const dx=e.x-cx, dy=e.y-by;
-        const hitDist = e.r*0.55 + o.spider.r*0.7;
+        const hitDist = e.r*0.5 + o.spider.r*0.65;
         if(dx*dx+dy*dy < hitDist*hitDist) return true;
       }
     }
