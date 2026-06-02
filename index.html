@@ -83,8 +83,8 @@
   <div id="startScreen" class="overlay">
     <div class="title">Ellie's<br>Bamboo Flight<small>🐘 a cute flappy adventure 🎋</small></div>
     <div class="panel">
-      <div class="emoji">🐘 🎋 🐞 🐜 🕷️</div>
-      <p>Flap Ellie's big ears through the gaps! Watch for bamboo, swarms of ladybugs, marching ants and dangling spiders.</p>
+      <div class="emoji">👻 🐘 🎋</div>
+      <p>A friendly ghost carries baby Ellie on a string! Flap to fly the ghost — it drifts through everything. But Ellie swings below, so steer so she clears the gaps!</p>
     </div>
     <div class="hint">tap / click / press space to flap</div>
     <button id="startBtn">Play!</button>
@@ -238,7 +238,7 @@
 
   let state = 'ready';     // ready | playing | over
   let best = 0;
-  let score, time, ellie, obstacles, speed;
+  let score, time, ellie, ghost, obstacles, speed, pickups, powers;
   let scenery; // parallax background layers
 
   // ===================== SCENERY (parallax background) =====================
@@ -300,24 +300,22 @@
     const o = { x, gapY, type, scored:false };
 
     if(type === 'spider'){
-      const dropMin = 36;
-      const dropMax = gapY + GAP*0.28;   // stays in the upper third; big clear lane below
-      // Two kinds of spider:
-      //  - 'glide': drifts slowly up and down (most common, gentle)
-      //  - 'fall' : hangs near the top, then drops, pauses, reels back up
-      const sudden = Math.random() < 0.4;
+      // Top & bottom are tree branches (drawn separately). A spider hangs on a
+      // web from the upper branch and swings SIDE TO SIDE across the gap, so the
+      // vertical opening always stays clear — you fly through when the spider has
+      // swung to one side. Web length is fixed; only the horizontal sway changes.
+      const anchorY = gapY;                 // web attaches to underside of top branch
+      const hangLen = GAP*0.34;             // spider sits high -> big clear space below
+      const swing = (PIPE_W*0.5) + 26;      // horizontal swing amplitude (px)
       o.spider = {
-        r: 14,
-        dropMin, dropMax,
-        drop: dropMin,
-        mode: sudden ? 'fall' : 'glide',
+        r: 13,
+        anchorY,
+        hangLen,
+        swing,
         phase: Math.random()*6.28,
-        freq: 0.22 + Math.random()*0.13,   // glide: slow cycles/sec
-        // fall-mode state machine
-        fallState: 'hang',                 // hang -> dropping -> bottom -> rising
-        timer: 0.6 + Math.random()*1.2,    // seconds to wait before first drop
-        dropSpeed: 90 + Math.random()*40,  // px/s while falling (slow & clearly visible)
-        riseSpeed: 60 + Math.random()*25   // px/s while reeling back up
+        freq: 0.55 + Math.random()*0.3,     // swings/sec
+        sx: 0,                              // current horizontal offset (set each frame)
+        sy: gapY + hangLen                  // fixed vertical position
       };
     } else if(type === 'ladybugs'){
       // ladybug clusters that FILL the top and bottom barriers (visual matches collision)
@@ -342,16 +340,53 @@
   // ===================== LIFECYCLE =====================
   function reset(){
     score = 0; time = 0; speed = BASE_SPEED;
-    ellie = { x: W*0.28, y: H*0.45, r: 25, vy: 0, rot: 0, flap: 0 };
+    // Ghost is what the player controls; the baby elephant dangles below on a
+    // string as a pendulum bob. Only the elephant collides; the ghost is intangible.
+    ghost = { x: W*0.30, y: H*0.40, vy: 0, flap: 0 };
+    const L = 92;                       // string length
+    ellie = {
+      r: 22,
+      baseR: 22,
+      string: L,
+      a: 0,                             // pendulum angle from straight-down (rad)
+      av: 0,                            // angular velocity
+      x: ghost.x, y: ghost.y + L, rot: 0
+    };
     obstacles = [];
+    pickups = [];
+    powers = { invincible:0, tiny:0, slowmo:0, shield:false };
     makeScenery();
     let startX = W + 140;
     for(let i=0;i<4;i++) addObstacle(startX + i*SPACING);
     hud.textContent = '0';
   }
+  // ---- power-up pickups ----
+  const POWER_TYPES = ['invincible','tiny','slowmo','shield'];
+  const POWER_INFO = {
+    invincible:{ color:'#ffd34d', ring:'#e8a400', icon:'star' },
+    tiny:{ color:'#7fd1ff', ring:'#2f9fe0', icon:'arrows' },
+    slowmo:{ color:'#b59cff', ring:'#7c5fe0', icon:'clock' },
+    shield:{ color:'#9be88a', ring:'#4faf3f', icon:'shield' }
+  };
+  function maybeSpawnPickup(afterX){
+    // ~40% chance to float a pickup midway after a newly added obstacle
+    if(Math.random() > 0.4) return;
+    const type = POWER_TYPES[Math.floor(Math.random()*POWER_TYPES.length)];
+    const x = afterX + SPACING*0.5;
+    const y = 110 + Math.random()*(H - GROUND_H - 220);
+    pickups.push({ x, y, r:16, type, phase:Math.random()*6.28, taken:false });
+  }
+
+  function applyPower(type){
+    if(type==='invincible') powers.invincible = 3;
+    else if(type==='tiny')  powers.tiny = 3;
+    else if(type==='slowmo') powers.slowmo = 3;
+    else if(type==='shield') powers.shield = true;
+  }
+
   function flap(){
     if(state === 'ready'){ start(); return; }
-    if(state === 'playing'){ ellie.vy = FLAP; ellie.flap = 1; Audio.play('flap'); }
+    if(state === 'playing'){ ghost.vy = FLAP; ghost.flap = 1; Audio.play('flap'); }
   }
   function start(){
     Audio.unlock();
@@ -558,14 +593,44 @@
     }
   }
 
+  function drawBranch(x, top, bottom){
+    const h=bottom-top, cx=x+PIPE_W/2;
+    // bark gradient
+    const g=ctx.createLinearGradient(x,0,x+PIPE_W,0);
+    g.addColorStop(0,'#9c7550'); g.addColorStop(.5,'#7d5a3a'); g.addColorStop(1,'#5f4329');
+    ctx.fillStyle=g; roundRect(x,top,PIPE_W,h,10); ctx.fill();
+    // bark texture lines
+    ctx.strokeStyle='rgba(60,40,25,.35)'; ctx.lineWidth=2;
+    for(let i=0;i<3;i++){
+      const lx=x+12+i*22;
+      ctx.beginPath(); ctx.moveTo(lx,top+6); ctx.lineTo(lx+4,bottom-6); ctx.stroke();
+    }
+    // a couple of leafy twigs at the open end
+    const ly=(top===0)?bottom:top, dir=(top===0)?1:-1;
+    ctx.strokeStyle='#6f5238'; ctx.lineWidth=4; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(cx,ly); ctx.lineTo(cx-16,ly+dir*16); ctx.moveTo(cx,ly); ctx.lineTo(cx+18,ly+dir*12); ctx.stroke();
+    ctx.fillStyle='#6abf57';
+    for(const lp of [[-22,18],[20,14],[2,22]]){
+      ctx.beginPath(); ctx.ellipse(cx+lp[0], ly+dir*lp[1], 8, 12, lp[0]*0.03, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle='rgba(255,255,255,.12)'; roundRect(x+9,top+6,7,h-12,4); ctx.fill();
+  }
+
   function drawSpider(o){
+    // tree-branch barriers, top and bottom
+    drawBranch(o.x, 0, o.gapY);
+    drawBranch(o.x, o.gapY+GAP, H-GROUND_H);
+
     const cx = o.x + PIPE_W/2;
-    const y = o.spider.drop;
+    const anchorX = cx;                 // web hangs from a fixed point on the branch
+    const sx = cx + o.spider.sx;        // spider current x (swinging)
+    const sy = o.spider.sy;             // spider y (fixed mid-gap)
     const r = o.spider.r;
-    // web line from ceiling
+    // angled web line from the branch anchor to the swinging spider
     ctx.strokeStyle='rgba(255,255,255,.7)'; ctx.lineWidth=1.6;
-    ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,y-r+2); ctx.stroke();
-    ctx.save(); ctx.translate(cx,y);
+    ctx.beginPath(); ctx.moveTo(anchorX, o.spider.anchorY); ctx.lineTo(sx, sy-r+2); ctx.stroke();
+
+    ctx.save(); ctx.translate(sx, sy);
     const legSwing=Math.sin(time*6+o.spider.phase)*0.3;
     ctx.strokeStyle='#3a2f3a'; ctx.lineWidth=2.4; ctx.lineCap='round';
     for(const side of [-1,1]){
@@ -575,12 +640,50 @@
         ctx.quadraticCurveTo(spread, ay-4+legSwing*6*side, spread*1.3, ay+7); ctx.stroke();
       }
     }
-    ctx.fillStyle='#473b4a'; ctx.beginPath(); ctx.ellipse(0,6,13,14,0,0,7); ctx.fill();
-    ctx.fillStyle='#6b5870'; ctx.beginPath(); ctx.ellipse(0,6,6,8,0,0,7); ctx.fill();
-    ctx.fillStyle='#3a2f3a'; ctx.beginPath(); ctx.arc(0,-6,9,0,7); ctx.fill();
-    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(-3.5,-7,3.2,0,7); ctx.arc(3.5,-7,3.2,0,7); ctx.fill();
-    ctx.fillStyle='#1d1820'; ctx.beginPath(); ctx.arc(-3,-6.5,1.6,0,7); ctx.arc(4,-6.5,1.6,0,7); ctx.fill();
+    ctx.fillStyle='#473b4a'; ctx.beginPath(); ctx.ellipse(0,6,12,13,0,0,7); ctx.fill();
+    ctx.fillStyle='#6b5870'; ctx.beginPath(); ctx.ellipse(0,6,5,7,0,0,7); ctx.fill();
+    ctx.fillStyle='#3a2f3a'; ctx.beginPath(); ctx.arc(0,-6,8,0,7); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(-3,-7,3,0,7); ctx.arc(3,-7,3,0,7); ctx.fill();
+    ctx.fillStyle='#1d1820'; ctx.beginPath(); ctx.arc(-2.6,-6.5,1.5,0,7); ctx.arc(3.4,-6.5,1.5,0,7); ctx.fill();
     ctx.restore();
+  }
+
+  function drawPickups(){
+    pickups.forEach(p=>{
+      if(p.taken) return;
+      const info=POWER_INFO[p.type];
+      const y=p.bobY!=null?p.bobY:p.y;
+      ctx.save(); ctx.translate(p.x,y);
+      const pulse=1+Math.sin(time*4+p.phase)*0.08;
+      ctx.scale(pulse,pulse);
+      ctx.fillStyle=info.color+'55';
+      ctx.beginPath(); ctx.arc(0,0,p.r+8,0,7); ctx.fill();
+      ctx.fillStyle=info.color;
+      ctx.beginPath(); ctx.arc(0,0,p.r,0,7); ctx.fill();
+      ctx.lineWidth=3; ctx.strokeStyle=info.ring;
+      ctx.beginPath(); ctx.arc(0,0,p.r,0,7); ctx.stroke();
+      ctx.fillStyle='#fff'; ctx.strokeStyle='#fff'; ctx.lineWidth=2.4; ctx.lineCap='round';
+      if(info.icon==='star'){
+        ctx.beginPath();
+        for(let i=0;i<5;i++){
+          const a=-Math.PI/2 + i*2*Math.PI/5, a2=a+Math.PI/5;
+          ctx.lineTo(Math.cos(a)*8, Math.sin(a)*8);
+          ctx.lineTo(Math.cos(a2)*3.6, Math.sin(a2)*3.6);
+        }
+        ctx.closePath(); ctx.fill();
+      } else if(info.icon==='clock'){
+        ctx.beginPath(); ctx.arc(0,0,7,0,7); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-5); ctx.moveTo(0,0); ctx.lineTo(4,1); ctx.stroke();
+      } else if(info.icon==='arrows'){
+        ctx.beginPath(); ctx.moveTo(-8,-8); ctx.lineTo(-2,-2); ctx.moveTo(-6,-2); ctx.lineTo(-2,-2); ctx.lineTo(-2,-6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(8,8); ctx.lineTo(2,2); ctx.moveTo(6,2); ctx.lineTo(2,2); ctx.lineTo(2,6); ctx.stroke();
+      } else if(info.icon==='shield'){
+        ctx.beginPath();
+        ctx.moveTo(0,-8); ctx.lineTo(7,-4); ctx.lineTo(7,2); ctx.quadraticCurveTo(7,8,0,10);
+        ctx.quadraticCurveTo(-7,8,-7,2); ctx.lineTo(-7,-4); ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+    });
   }
 
   function drawObstacle(o){
@@ -603,36 +706,103 @@
     }
   }
 
+  function drawGhost(){
+    const g=ghost;
+    ctx.save(); ctx.translate(g.x, g.y);
+    const bob=Math.sin(time*4)*2;
+    // glow
+    ctx.fillStyle='rgba(200,220,255,.22)';
+    ctx.beginPath(); ctx.arc(0,bob,30,0,7); ctx.fill();
+
+    // flowing cloth body: domed head, a trailing tail to the LEFT (since we move
+    // right), and an animated wavy hem along the bottom.
+    ctx.fillStyle='rgba(245,250,255,.93)';
+    ctx.beginPath();
+    // head dome (slightly forward-leaning to the right)
+    ctx.arc(2,bob-2,19,Math.PI*0.95,Math.PI*1.95);
+    // forward (right) side down
+    ctx.quadraticCurveTo(22,bob+4, 20, bob+16);
+    // animated wavy hem from right to left
+    const baseY=bob+16, n=5, x0=20, x1=-26;
+    for(let i=0;i<n;i++){
+      const fx=x0 + (x1-x0)*((i+1)/n);
+      const px=x0 + (x1-x0)*((i+0.5)/n);
+      const dip = baseY + 9 + Math.sin(time*7 + i*1.1)*5;
+      ctx.quadraticCurveTo(px, dip, fx, baseY + Math.sin(time*7+i)*2);
+    }
+    // trailing tail wisp on the left, waving
+    const tailY = bob - 2 + Math.sin(time*5)*4;
+    ctx.quadraticCurveTo(-34, baseY-2, -30, tailY);
+    ctx.quadraticCurveTo(-20, bob-14, -8, bob-16);
+    ctx.closePath(); ctx.fill();
+
+    // face looking FORWARD (toward the right) — eyes set right of center
+    ctx.fillStyle='#5a6b8c';
+    ctx.beginPath(); ctx.ellipse(4,bob-4,3,4.5,0,0,7); ctx.ellipse(13,bob-4,3,4.5,0,0,7); ctx.fill();
+    // pupils glance forward
+    ctx.fillStyle='#36425c';
+    ctx.beginPath(); ctx.arc(5,bob-4,1.3,0,7); ctx.arc(14,bob-4,1.3,0,7); ctx.fill();
+    // little mouth
+    ctx.fillStyle='#5a6b8c';
+    ctx.beginPath(); ctx.arc(9,bob+4,2.5,0,Math.PI); ctx.fill();
+    // rosy cheeks
+    ctx.fillStyle='rgba(255,170,180,.4)';
+    ctx.beginPath(); ctx.arc(2,bob+2,3,0,7); ctx.arc(16,bob+2,3,0,7); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawString(){
+    // wavy ghostly string from ghost down to the baby elephant
+    const g=ghost, e=ellie;
+    ctx.strokeStyle='rgba(255,255,255,.65)'; ctx.lineWidth=2; ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(g.x, g.y+14);
+    const mx=(g.x+e.x)/2 + Math.sin(time*5)*4, my=(g.y+e.y)/2;
+    ctx.quadraticCurveTo(mx, my, e.x, e.y-e.r*0.6);
+    ctx.stroke();
+  }
+
   function drawEllie(){
+    // the baby elephant dangling on the string (smaller, normal ears, tilts with swing)
     const e=ellie;
-    const beat=Math.sin(time*9)*0.35 + e.flap*0.9;
+    let aura=null;
+    if(powers.invincible>0) aura='#ffd34d';
+    else if(powers.shield) aura='#9be88a';
+    else if(powers.tiny>0) aura='#7fd1ff';
+    else if(powers.slowmo>0) aura='#b59cff';
+    if(aura){
+      ctx.save(); ctx.translate(e.x,e.y);
+      ctx.globalAlpha=0.35+Math.sin(time*8)*0.12;
+      ctx.fillStyle=aura;
+      ctx.beginPath(); ctx.arc(0,0,e.r+12,0,7); ctx.fill();
+      ctx.restore();
+    }
     ctx.save(); ctx.translate(e.x,e.y); ctx.rotate(e.rot);
+    const s=0.8*(e.r/(e.baseR||22)); ctx.scale(s,s);
+    const earBeat=Math.sin(time*5)*0.12;
     // far ear
-    ctx.save(); ctx.translate(-2,-4); ctx.rotate(-0.15-beat*0.9);
-    let g1=ctx.createLinearGradient(-40,0,0,0); g1.addColorStop(0,'#9cbfd9'); g1.addColorStop(1,'#b6cfe6');
-    ctx.fillStyle=g1; ctx.beginPath(); ctx.ellipse(-26,2,26,32,0.25,0,7); ctx.fill();
-    ctx.fillStyle='rgba(217,182,201,.5)'; ctx.beginPath(); ctx.ellipse(-24,4,14,20,0.25,0,7); ctx.fill();
+    ctx.save(); ctx.translate(-2,-4); ctx.rotate(-0.35-earBeat);
+    ctx.fillStyle='#aecbe4'; ctx.beginPath(); ctx.ellipse(-15,2,15,19,0.2,0,7); ctx.fill();
     ctx.restore();
     // body
-    ctx.fillStyle='#c9dcee'; ctx.beginPath(); ctx.ellipse(0,4,24,22,0,0,7); ctx.fill();
+    ctx.fillStyle='#c9dcee'; ctx.beginPath(); ctx.ellipse(0,4,23,21,0,0,7); ctx.fill();
     // head
-    ctx.fillStyle='#cfe0f0'; ctx.beginPath(); ctx.arc(9,-7,19,0,7); ctx.fill();
-    // trunk
-    ctx.strokeStyle='#cfe0f0'; ctx.lineWidth=11; ctx.lineCap='round';
-    ctx.beginPath(); ctx.moveTo(21,-1); ctx.quadraticCurveTo(35,5,31,18); ctx.stroke();
-    // eye
-    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(15,-11,6,0,7); ctx.fill();
-    ctx.fillStyle='#3a3340'; ctx.beginPath(); ctx.arc(16,-10,3,0,7); ctx.fill();
-    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(17.5,-11.5,1.1,0,7); ctx.fill();
-    ctx.fillStyle='rgba(240,160,170,.55)'; ctx.beginPath(); ctx.arc(6,1,5,0,7); ctx.fill();
-    // feet
-    ctx.fillStyle='#b6cfe6'; ctx.beginPath(); ctx.ellipse(-8,23,7,5,0,0,7); ctx.ellipse(8,23,7,5,0,0,7); ctx.fill();
-    // near ear (big flapping wing)
-    ctx.save(); ctx.translate(4,-6); ctx.rotate(0.15+beat);
-    let g2=ctx.createLinearGradient(-34,0,4,0); g2.addColorStop(0,'#aecbe4'); g2.addColorStop(1,'#c9dcee');
-    ctx.fillStyle=g2; ctx.beginPath(); ctx.ellipse(-22,4,28,34,-0.2,0,7); ctx.fill();
-    ctx.fillStyle='#d9b6c9'; ctx.beginPath(); ctx.ellipse(-20,6,16,22,-0.2,0,7); ctx.fill();
+    ctx.fillStyle='#cfe0f0'; ctx.beginPath(); ctx.arc(8,-6,18,0,7); ctx.fill();
+    // trunk (curls toward the string)
+    ctx.strokeStyle='#cfe0f0'; ctx.lineWidth=10; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(18,-12); ctx.quadraticCurveTo(30,-20,24,-30); ctx.stroke();
+    // near ear
+    ctx.save(); ctx.translate(6,-4); ctx.rotate(0.3+earBeat);
+    ctx.fillStyle='#bcd4e8'; ctx.beginPath(); ctx.ellipse(-12,2,15,19,-0.15,0,7); ctx.fill();
+    ctx.fillStyle='#d9b6c9'; ctx.beginPath(); ctx.ellipse(-12,3,8,11,-0.15,0,7); ctx.fill();
     ctx.restore();
+    // eye
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(13,-9,5,0,7); ctx.fill();
+    ctx.fillStyle='#3a3340'; ctx.beginPath(); ctx.arc(14,-8,2.6,0,7); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(15,-9.5,1,0,7); ctx.fill();
+    ctx.fillStyle='rgba(240,160,170,.55)'; ctx.beginPath(); ctx.arc(4,2,4.5,0,7); ctx.fill();
+    // feet
+    ctx.fillStyle='#b6cfe6'; ctx.beginPath(); ctx.ellipse(-8,22,6,4,0,0,7); ctx.ellipse(8,22,6,4,0,0,7); ctx.fill();
     ctx.restore();
   }
 
@@ -662,12 +832,11 @@
         // bottom column solid; top formed by bugs (check each bug circle) ; also bottom bugs
         if(circleHitsColumns(o, o.gapY, o.gapY+GAP)) return true;
       } else if(o.type==='spider'){
-        // top is open; only the bottom stalk and the spider's VISIBLE body are solid.
-        if(circleHitsColumns(o, null, o.gapY+GAP)) return true;
-        // the drawn body sits ~6px below `drop`; use a snug radius so flying clearly
-        // under the spider never counts as a hit (legs are decorative, not solid).
-        const cx=o.x+PIPE_W/2, by=o.spider.drop+6;
-        const dx=e.x-cx, dy=e.y-by;
+        // top + bottom tree branches are solid (like logs) ...
+        if(circleHitsColumns(o, o.gapY, o.gapY+GAP)) return true;
+        // ... plus the spider swinging side-to-side on its web
+        const sx=o.x+PIPE_W/2 + o.spider.sx, sy=o.spider.sy+6;
+        const dx=e.x-sx, dy=e.y-sy;
         const hitDist = e.r*0.5 + o.spider.r*0.65;
         if(dx*dx+dy*dy < hitDist*hitDist) return true;
       }
@@ -682,64 +851,136 @@
 
     if(state==='playing'){
       speed += 6*dt; // gentle ramp
-      const e=ellie;
-      e.vy += GRAV*dt;
-      e.y  += e.vy*dt;
-      e.rot = Math.max(-0.5, Math.min(1.1, e.vy*0.0011));
-      e.flap = Math.max(0, e.flap - dt*4);
+      const g=ghost, e=ellie;
+      // effective scroll speed (slow-mo halves it)
+      const spd = speed * (powers.slowmo>0 ? 0.5 : 1);
+      // tiny power shrinks the elephant's collision + draw size
+      e.r = (powers.tiny>0 ? e.baseR*0.55 : e.baseR);
+
+      // --- ghost: same float feel as before, kept on-screen, intangible ---
+      const prevGY = g.y;
+      g.vy += GRAV*dt;
+      g.y  += g.vy*dt;
+      g.flap = Math.max(0, g.flap - dt*4);
+      // soft bounds so the ghost can't leave the playfield
+      if(g.y < 30){ g.y=30; if(g.vy<0) g.vy=0; }
+      if(g.y > H-GROUND_H-30){ g.y=H-GROUND_H-30; if(g.vy>0) g.vy=0; }
+      const ghostAY = (g.y - prevGY)/dt; // vertical velocity for pendulum forcing
+
+      // --- elephant: pendulum bob hanging from the ghost ---
+      const Lp = e.string;
+      const grav = 26;                          // pendulum gravity strength
+      const drive = -ghostAY * 0.010;           // ghost motion pushes the swing
+      const aacc = -(grav/Lp)*Math.sin(e.a) + drive*Math.cos(e.a);
+      e.av += aacc*dt;
+      e.av *= (1 - 1.4*dt);                     // damping so it settles
+      e.av = Math.max(-6, Math.min(6, e.av));
+      e.a  += e.av*dt;
+      const maxA = 1.15;
+      if(e.a> maxA){ e.a= maxA; e.av*=-0.3; }
+      if(e.a<-maxA){ e.a=-maxA; e.av*=-0.3; }
+      e.x = g.x + Math.sin(e.a)*Lp;
+      e.y = g.y + Math.cos(e.a)*Lp;
+      e.rot = e.a*0.5;
 
       obstacles.forEach(o=>{
-        o.x -= speed*dt;
+        o.x -= spd*dt;
         if(o.type==='spider'){
           const s=o.spider;
-          if(s.mode==='glide'){
-            // slow, smooth up-and-down drift
-            const t=(Math.sin(time*s.freq*2*Math.PI + s.phase)+1)/2;
-            s.drop = s.dropMin + t*(s.dropMax-s.dropMin);
-          } else {
-            // sudden-fall state machine
-            s.timer -= dt;
-            if(s.fallState==='hang'){
-              s.drop = s.dropMin;
-              if(s.timer<=0){ s.fallState='dropping'; }
-            } else if(s.fallState==='dropping'){
-              s.drop += s.dropSpeed*dt;
-              if(s.drop>=s.dropMax){ s.drop=s.dropMax; s.fallState='bottom'; s.timer=0.4+Math.random()*0.5; }
-            } else if(s.fallState==='bottom'){
-              if(s.timer<=0){ s.fallState='rising'; }
-            } else if(s.fallState==='rising'){
-              s.drop -= s.riseSpeed*dt;
-              if(s.drop<=s.dropMin){ s.drop=s.dropMin; s.fallState='hang'; s.timer=1.0+Math.random()*1.8; }
-            }
-          }
+          s.sx = Math.sin(time*s.freq*2*Math.PI + s.phase) * s.swing;
+          s.sy = o.gapY + s.hangLen;
         }
         if(!o.scored && o.x + PIPE_W < e.x){
           o.scored=true; score++; hud.textContent=score;
           Audio.play('score');
-          Audio.play(o.type);   // bamboo / ladybugs / ants / spider
+          Audio.play(o.type);
         }
       });
       if(obstacles.length && obstacles[0].x < -PIPE_W-40){
         obstacles.shift();
         const last=obstacles[obstacles.length-1].x;
         addObstacle(last + SPACING);
+        maybeSpawnPickup(last);
       }
-      if(collides()) gameOver();
+
+      // move & collect pickups
+      const e2=ellie;
+      pickups.forEach(p=>{
+        p.x -= spd*dt;
+        p.bobY = p.y + Math.sin(time*3 + p.phase)*7;
+        if(!p.taken){
+          const dx=e2.x-p.x, dy=e2.y-p.bobY;
+          if(dx*dx+dy*dy < (e2.r+p.r)*(e2.r+p.r)){
+            p.taken=true;
+            applyPower(p.type);
+            Audio.play('score');
+          }
+        }
+      });
+      pickups = pickups.filter(p=> !p.taken && p.x > -40);
+
+      // tick down power timers
+      if(powers.invincible>0) powers.invincible=Math.max(0,powers.invincible-dt);
+      if(powers.tiny>0)       powers.tiny=Math.max(0,powers.tiny-dt);
+      if(powers.slowmo>0)     powers.slowmo=Math.max(0,powers.slowmo-dt);
+      if(powers.invincible<=0 && collides()){
+        if(powers.shield){
+          powers.shield=false;
+          powers.invincible=Math.max(powers.invincible,0.8);
+          Audio.play('bamboo');
+        } else {
+          gameOver();
+        }
+      }
     } else if(state==='over'){
+      // string snaps: the baby elephant tumbles down
       const e=ellie;
-      if(e.y+e.r < H-GROUND_H){ e.vy+=GRAV*dt; e.y+=e.vy*dt; e.rot=Math.min(1.4,e.rot+dt*2); }
+      e.fallVy = (e.fallVy||0) + GRAV*dt;
+      if(e.y+e.r < H-GROUND_H){ e.y += e.fallVy*dt; e.rot += dt*3; }
+      // ghost drifts gently upward, sad
+      ghost.y -= 20*dt;
     } else if(state==='ready'){
-      ellie.y = H*0.45 + Math.sin(time*2.2)*10;
-      ellie.rot = Math.sin(time*2.2)*0.08;
+      // gentle idle: ghost bobs, elephant hangs straight below
+      ghost.y = H*0.40 + Math.sin(time*2.2)*8;
+      ellie.a = Math.sin(time*1.3)*0.12;
+      ellie.x = ghost.x + Math.sin(ellie.a)*ellie.string;
+      ellie.y = ghost.y + Math.cos(ellie.a)*ellie.string;
+      ellie.rot = ellie.a*0.5;
     }
+  }
+
+  function drawPowerHUD(){
+    if(state!=='playing') return;
+    const active=[];
+    if(powers.invincible>0) active.push(['invincible',powers.invincible]);
+    if(powers.tiny>0) active.push(['tiny',powers.tiny]);
+    if(powers.slowmo>0) active.push(['slowmo',powers.slowmo]);
+    if(powers.shield) active.push(['shield',null]);
+    let x=14, y=64;
+    active.forEach(([type,tleft])=>{
+      const info=POWER_INFO[type];
+      ctx.fillStyle=info.color;
+      ctx.beginPath(); ctx.arc(x+12,y+12,12,0,7); ctx.fill();
+      ctx.lineWidth=2.5; ctx.strokeStyle=info.ring; ctx.stroke();
+      // timer ring
+      if(tleft!=null){
+        ctx.strokeStyle='#fff'; ctx.lineWidth=3;
+        ctx.beginPath(); ctx.arc(x+12,y+12,12,-Math.PI/2, -Math.PI/2 + (tleft/3)*2*Math.PI); ctx.stroke();
+      }
+      y+=30;
+    });
   }
 
   function render(){
     ctx.clearRect(0,0,W,H);
     drawBackground();
     obstacles.forEach(drawObstacle);
+    drawPickups();
     drawGround();
+    if(state!=='over') drawString();
     drawEllie();
+    if(state!=='over') drawGhost();
+    drawPowerHUD();
   }
 
   // ===================== MAIN LOOP (fixed-step accumulator) =====================
