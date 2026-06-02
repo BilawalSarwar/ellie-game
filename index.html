@@ -188,25 +188,37 @@
     const o = { x, gapY, type, scored:false };
 
     if(type === 'spider'){
+      const dropMin = 36;
+      const dropMax = gapY + GAP*0.45;
+      // Two kinds of spider:
+      //  - 'glide': drifts slowly up and down (most common, gentle)
+      //  - 'fall' : hangs near the top, then suddenly drops, pauses, reels back up
+      const sudden = Math.random() < 0.4;
       o.spider = {
-        drop: 40,
-        dropMin: 40,
-        dropMax: gapY + GAP*0.4,
+        r: 16,
+        dropMin, dropMax,
+        drop: dropMin,
+        mode: sudden ? 'fall' : 'glide',
         phase: Math.random()*6.28,
-        freq: 0.9 + Math.random()*0.6,   // cycles/sec
-        r: 16
+        freq: 0.22 + Math.random()*0.13,   // glide: slow cycles/sec
+        // fall-mode state machine
+        fallState: 'hang',                 // hang -> dropping -> bottom -> rising
+        timer: 0.6 + Math.random()*1.2,    // seconds to wait before first drop
+        dropSpeed: 150 + Math.random()*60, // px/s while falling (gentle, visible)
+        riseSpeed: 70 + Math.random()*30   // px/s while reeling back up (slower)
       };
     } else if(type === 'ladybugs'){
-      // a vertical cluster of ladybugs forming the TOP barrier, bobbing softly
+      // ladybug clusters that FILL the top and bottom barriers (visual matches collision)
       o.bugs = [];
-      const n = 3 + Math.floor(Math.random()*3); // 3-5
-      for(let i=0;i<n;i++){
-        o.bugs.push({ ox:(Math.random()*PIPE_W-PIPE_W/2)*0.7, oy: 16 + i*30, ph:Math.random()*6.28, r:15 });
+      const step = 28;
+      for(let y = 14; y < gapY - 6; y += step){
+        o.bugs.push({ x:(Math.random()*PIPE_W-PIPE_W/2)*0.55, y, ph:Math.random()*6.28, r:14 });
       }
       o.botBugs = [];
-      const m = 2 + Math.floor(Math.random()*3);
-      for(let i=0;i<m;i++){
-        o.botBugs.push({ ox:(Math.random()*PIPE_W-PIPE_W/2)*0.7, oy: -(16 + i*30), ph:Math.random()*6.28, r:15 });
+      const botStart = gapY + GAP;
+      const botEnd = H - GROUND_H;
+      for(let y = botStart + 14; y < botEnd - 6; y += step){
+        o.botBugs.push({ x:(Math.random()*PIPE_W-PIPE_W/2)*0.55, y, ph:Math.random()*6.28, r:14 });
       }
     } else if(type === 'ants'){
       // marching ant columns top & bottom (the solid parts), animated legs
@@ -387,14 +399,9 @@
     ctx.restore();
   }
   function drawLadybugs(o){
-    // thin guide stalks so the gap is readable, then bugs on top
-    ctx.fillStyle='rgba(120,170,90,.30)';
-    roundRect(o.x+PIPE_W*0.32,0,PIPE_W*0.36,o.gapY,8); ctx.fill();
-    roundRect(o.x+PIPE_W*0.32,o.gapY+GAP,PIPE_W*0.36,(H-GROUND_H)-(o.gapY+GAP),8); ctx.fill();
     const cx=o.x+PIPE_W/2;
-    o.bugs.forEach(b=> drawLadybug(cx+b.ox, b.oy + Math.sin(time*2.4+b.ph)*5, b.r));
-    const botStart=o.gapY+GAP;
-    o.botBugs.forEach((b,i)=> drawLadybug(cx+b.ox, botStart + 16 + i*30 + Math.sin(time*2.4+b.ph)*5, b.r));
+    o.bugs.forEach(b=> drawLadybug(cx+b.x, b.y + Math.sin(time*2.4+b.ph)*4, b.r));
+    o.botBugs.forEach(b=> drawLadybug(cx+b.x, b.y + Math.sin(time*2.4+b.ph)*4, b.r));
   }
 
   function drawAnt(cx, cy, r, ph){
@@ -428,17 +435,13 @@
     roundRect(o.x,0,PIPE_W,o.gapY,10); ctx.fill();
     roundRect(o.x,o.gapY+GAP,PIPE_W,(H-GROUND_H)-(o.gapY+GAP),10); ctx.fill();
     // ants walking on the lip of each column
-    const cx=o.x+PIPE_W/2;
     const r=7;
-    const march=(time*60)%24;
-    ctx.save();
     for(let i=0;i<3;i++){
       drawAnt(o.x+12+i*22, o.gapY-12, r, o.antPhase+time*8+i);
     }
     for(let i=0;i<3;i++){
       drawAnt(o.x+12+i*22, o.gapY+GAP+12, r, o.antPhase+time*8+i+1.5);
     }
-    ctx.restore();
   }
 
   function drawSpider(o){
@@ -565,8 +568,26 @@
         o.x -= speed*dt;
         if(o.type==='spider'){
           const s=o.spider;
-          const t=(Math.sin(time*s.freq*2*Math.PI + s.phase)+1)/2;
-          s.drop = s.dropMin + t*(s.dropMax-s.dropMin);
+          if(s.mode==='glide'){
+            // slow, smooth up-and-down drift
+            const t=(Math.sin(time*s.freq*2*Math.PI + s.phase)+1)/2;
+            s.drop = s.dropMin + t*(s.dropMax-s.dropMin);
+          } else {
+            // sudden-fall state machine
+            s.timer -= dt;
+            if(s.fallState==='hang'){
+              s.drop = s.dropMin;
+              if(s.timer<=0){ s.fallState='dropping'; }
+            } else if(s.fallState==='dropping'){
+              s.drop += s.dropSpeed*dt;
+              if(s.drop>=s.dropMax){ s.drop=s.dropMax; s.fallState='bottom'; s.timer=0.4+Math.random()*0.5; }
+            } else if(s.fallState==='bottom'){
+              if(s.timer<=0){ s.fallState='rising'; }
+            } else if(s.fallState==='rising'){
+              s.drop -= s.riseSpeed*dt;
+              if(s.drop<=s.dropMin){ s.drop=s.dropMin; s.fallState='hang'; s.timer=1.0+Math.random()*1.8; }
+            }
+          }
         }
         if(!o.scored && o.x + PIPE_W < e.x){ o.scored=true; score++; hud.textContent=score; }
       });
