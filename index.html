@@ -209,6 +209,13 @@
     muteBtn.textContent = m ? '🔇' : '🔊';
   });
 
+  // When the page is backgrounded on iOS (call, notification, app switch) rAF pauses.
+  // On return, reset the clock so the accumulator doesn't try to "catch up" with a
+  // burst of steps that would jolt Ellie. Also drop any leftover simulation time.
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden){ lastT = performance.now(); acc = 0; }
+  });
+
   let W, H, DPR, GROUND_H;
   function resize(){
     DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -735,12 +742,24 @@
     drawEllie();
   }
 
-  // ===================== MAIN LOOP (delta time, capped) =====================
+  // ===================== MAIN LOOP (fixed-step accumulator) =====================
+  // A fixed simulation step makes physics & collision identical on 60Hz, 120Hz
+  // (iPhone ProMotion), and during frame hitches. A single slow frame is broken
+  // into several small steps instead of one big jump, so Ellie can never
+  // "teleport" through the edge of a gap — which was the iPhone-only bug.
+  const STEP = 1/120;            // simulate at a steady 120 steps/sec
+  let acc = 0;
   let lastT = performance.now();
   function loop(now){
-    let dt=(now-lastT)/1000; lastT=now;
-    if(dt>0.05) dt=0.05;          // clamp big gaps (tab switches) for stability
-    update(dt);
+    let frameDt=(now-lastT)/1000; lastT=now;
+    if(frameDt>0.25) frameDt=0.25;     // after a long pause, don't fast-forward forever
+    acc += frameDt;
+    let steps=0;
+    while(acc >= STEP && steps < 60){   // cap steps to stay responsive
+      update(STEP);
+      acc -= STEP;
+      steps++;
+    }
     render();
     requestAnimationFrame(loop);
   }
