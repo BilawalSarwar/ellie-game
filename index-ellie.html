@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ellie">
+<meta name="theme-color" content="#bff0e8">
+<title>Ellie's Bamboo Flight</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Baloo+2:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;overflow:hidden;font-family:'Fredoka',sans-serif;}
+  body{
+    display:flex;align-items:center;justify-content:center;
+    background:#e8d4b8;
+    background-image:radial-gradient(circle at 30% 20%,#f3e0c4,#d6bd9a);
+  }
+  #wrap{
+    position:relative;
+    width:min(100vw,480px);
+    height:min(100vh,800px);
+    box-shadow:0 30px 60px rgba(90,60,40,.35);
+    border-radius:18px;overflow:hidden;
+  }
+  canvas{display:block;width:100%;height:100%;touch-action:none;}
+  .overlay{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:18px;
+    text-align:center;padding:24px;z-index:5;
+    background:rgba(70,50,40,.18);backdrop-filter:blur(2px);
+  }
+  .hidden{display:none!important;}
+  .title{
+    font-family:'Baloo 2',cursive;font-weight:800;
+    font-size:clamp(34px,9vw,52px);color:#fff;line-height:1;
+    text-shadow:0 4px 0 #e89b4f,0 7px 14px rgba(0,0,0,.25);
+  }
+  .title small{display:block;font-size:.42em;font-weight:700;color:#fff6e6;margin-top:8px;letter-spacing:1px;text-shadow:0 2px 4px rgba(0,0,0,.2);}
+  .panel{
+    background:rgba(255,251,243,.92);border-radius:22px;
+    padding:22px 26px;box-shadow:0 10px 0 rgba(0,0,0,.08);
+    color:#4a3b3b;max-width:310px;
+  }
+  .panel p{font-size:15px;line-height:1.5;font-weight:500;}
+  .emoji{font-size:42px;}
+  .score-big{font-family:'Baloo 2';font-weight:800;font-size:54px;color:#e8843f;line-height:1;}
+  .best{font-weight:600;color:#8a7a6a;font-size:15px;margin-top:4px;}
+  button{
+    font-family:'Baloo 2',cursive;font-weight:800;font-size:22px;
+    color:#fff;background:#f2994a;border:none;cursor:pointer;
+    padding:14px 40px;border-radius:50px;
+    box-shadow:0 6px 0 #c9742f,0 10px 18px rgba(0,0,0,.2);
+    transition:transform .08s,box-shadow .08s;
+  }
+  button:active{transform:translateY(4px);box-shadow:0 2px 0 #c9742f;}
+  .hint{color:#fff;font-weight:600;font-size:16px;text-shadow:0 2px 4px rgba(0,0,0,.25);animation:bob 1.3s ease-in-out infinite;}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  #hud{
+    position:absolute;top:18px;left:0;right:0;text-align:center;
+    z-index:3;pointer-events:none;
+    font-family:'Baloo 2';font-weight:800;font-size:46px;color:#fff;
+    text-shadow:0 3px 0 #d98b3e,0 5px 10px rgba(0,0,0,.3);
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="hud" class="hidden">0</div>
+
+  <div id="startScreen" class="overlay">
+    <div class="title">Ellie's<br>Bamboo Flight<small>🐘 a cute flappy adventure 🎋</small></div>
+    <div class="panel">
+      <div class="emoji">🐘 🎋 🐞 🐜 🕷️</div>
+      <p>Flap Ellie's big ears through the gaps! Watch for bamboo, swarms of ladybugs, marching ants and dangling spiders.</p>
+    </div>
+    <div class="hint">tap / click / press space to flap</div>
+    <button id="startBtn">Play!</button>
+  </div>
+
+  <div id="overScreen" class="overlay hidden">
+    <div class="title" style="font-size:clamp(30px,7vw,42px)">Oops! 💫</div>
+    <div class="panel">
+      <div class="score-big" id="finalScore">0</div>
+      <div class="best" id="bestScore">Best: 0</div>
+    </div>
+    <button id="retryBtn">Try Again</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  const wrap = document.getElementById('wrap');
+  const hud = document.getElementById('hud');
+  const startScreen = document.getElementById('startScreen');
+  const overScreen = document.getElementById('overScreen');
+  const startBtn = document.getElementById('startBtn');
+  const retryBtn = document.getElementById('retryBtn');
+  const finalScore = document.getElementById('finalScore');
+  const bestScoreEl = document.getElementById('bestScore');
+
+  let W, H, DPR, GROUND_H;
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const r = wrap.getBoundingClientRect();
+    W = r.width; H = r.height;
+    GROUND_H = Math.max(64, H*0.09);
+    cv.width = W * DPR; cv.height = H * DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---- tuning (all in px/sec so motion is framerate-independent) ----
+  const GRAV   = 1500;     // px/s^2
+  const FLAP   = -430;     // px/s impulse
+  const PIPE_W = 72;
+  const GAP    = 195;
+  const SPACING= 250;      // horizontal distance between obstacles
+  const BASE_SPEED = 150;  // px/s scroll speed
+
+  let state = 'ready';     // ready | playing | over
+  let best = 0;
+  let score, time, ellie, obstacles, speed;
+  let scenery; // parallax background layers
+
+  // ===================== SCENERY (parallax background) =====================
+  // layer: 0 = far buildings, 1 = hills/trees, 2 = water strip near ground
+  function makeScenery(){
+    scenery = { buildings:[], trees:[], hills:[], water: H - GROUND_H - 26, items:[] };
+    // pre-fill far buildings & trees across and beyond the screen
+    let bx = 0;
+    while(bx < W + 200){
+      const t = Math.random();
+      if(t < 0.5){
+        scenery.items.push(makeBuilding(bx));
+        bx += 60 + Math.random()*50;
+      } else {
+        scenery.items.push(makeTree(bx));
+        bx += 70 + Math.random()*60;
+      }
+    }
+  }
+  function makeBuilding(x){
+    const h = 70 + Math.random()*120;
+    const w = 34 + Math.random()*30;
+    const hue = ['#b9c7d6','#c7d2de','#aebccb','#cfd8e2'][Math.floor(Math.random()*4)];
+    return {kind:'building', x, w, h, hue, layer:0, win: Math.random()<0.7};
+  }
+  function makeTree(x){
+    const h = 54 + Math.random()*46;
+    return {kind:'tree', x, h, layer:1, tint: Math.random()<0.5?'#7fbf6a':'#6fb35c'};
+  }
+  function recycleScenery(dt){
+    const horizon = H - GROUND_H;
+    scenery.items.forEach(it=>{
+      const par = it.layer===0 ? 0.25 : 0.5;
+      it.x -= speed * par * dt;
+    });
+    // remove off-screen left, append new on the right
+    scenery.items = scenery.items.filter(it=> it.x + 120 > 0);
+    let rightMost = 0;
+    scenery.items.forEach(it=> rightMost = Math.max(rightMost, it.x));
+    while(rightMost < W + 160){
+      const t = Math.random();
+      if(t < 0.5){ const b = makeBuilding(rightMost + 50 + Math.random()*40); scenery.items.push(b); rightMost = b.x; }
+      else { const tr = makeTree(rightMost + 60 + Math.random()*50); scenery.items.push(tr); rightMost = tr.x; }
+    }
+  }
+
+  // ===================== OBSTACLES =====================
+  // types: 'bamboo' | 'spider' | 'ladybugs' | 'ants'
+  function addObstacle(x){
+    const margin = 86;
+    const gapY = margin + Math.random()*(H - GAP - margin*2 - GROUND_H);
+    const roll = Math.random();
+    let type;
+    if(roll < 0.42) type = 'bamboo';
+    else if(roll < 0.62) type = 'spider';
+    else if(roll < 0.81) type = 'ladybugs';
+    else type = 'ants';
+
+    const o = { x, gapY, type, scored:false };
+
+    if(type === 'spider'){
+      o.spider = {
+        drop: 40,
+        dropMin: 40,
+        dropMax: gapY + GAP*0.4,
+        phase: Math.random()*6.28,
+        freq: 0.9 + Math.random()*0.6,   // cycles/sec
+        r: 16
+      };
+    } else if(type === 'ladybugs'){
+      // a vertical cluster of ladybugs forming the TOP barrier, bobbing softly
+      o.bugs = [];
+      const n = 3 + Math.floor(Math.random()*3); // 3-5
+      for(let i=0;i<n;i++){
+        o.bugs.push({ ox:(Math.random()*PIPE_W-PIPE_W/2)*0.7, oy: 16 + i*30, ph:Math.random()*6.28, r:15 });
+      }
+      o.botBugs = [];
+      const m = 2 + Math.floor(Math.random()*3);
+      for(let i=0;i<m;i++){
+        o.botBugs.push({ ox:(Math.random()*PIPE_W-PIPE_W/2)*0.7, oy: -(16 + i*30), ph:Math.random()*6.28, r:15 });
+      }
+    } else if(type === 'ants'){
+      // marching ant columns top & bottom (the solid parts), animated legs
+      o.antPhase = Math.random()*6.28;
+    }
+    obstacles.push(o);
+  }
+
+  // ===================== LIFECYCLE =====================
+  function reset(){
+    score = 0; time = 0; speed = BASE_SPEED;
+    ellie = { x: W*0.28, y: H*0.45, r: 25, vy: 0, rot: 0, flap: 0 };
+    obstacles = [];
+    makeScenery();
+    let startX = W + 140;
+    for(let i=0;i<4;i++) addObstacle(startX + i*SPACING);
+    hud.textContent = '0';
+  }
+  function flap(){
+    if(state === 'ready'){ start(); return; }
+    if(state === 'playing'){ ellie.vy = FLAP; ellie.flap = 1; }
+  }
+  function start(){
+    reset(); state='playing';
+    startScreen.classList.add('hidden');
+    overScreen.classList.add('hidden');
+    hud.classList.remove('hidden');
+  }
+  function gameOver(){
+    state='over'; best=Math.max(best,score);
+    finalScore.textContent = score;
+    bestScoreEl.textContent = 'Best: '+best;
+    hud.classList.add('hidden');
+    overScreen.classList.remove('hidden');
+  }
+
+  // ---- input ----
+  function press(e){ e.preventDefault(); flap(); }
+  cv.addEventListener('pointerdown', press);
+  window.addEventListener('keydown', e=>{ if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); flap(); }});
+  startBtn.addEventListener('click', e=>{ e.stopPropagation(); start(); });
+  retryBtn.addEventListener('click', e=>{ e.stopPropagation(); start(); });
+
+  // ===================== DRAW HELPERS =====================
+  function roundRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  function drawBackground(){
+    const horizon = H - GROUND_H;
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#bdeee6'); g.addColorStop(.5,'#d9f0d6'); g.addColorStop(1,'#fbe7cc');
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    // sun glow
+    ctx.fillStyle='rgba(255,240,190,.6)';
+    ctx.beginPath(); ctx.arc(W*0.8,H*0.15,70,0,7); ctx.fill();
+    ctx.fillStyle='rgba(255,232,170,.9)';
+    ctx.beginPath(); ctx.arc(W*0.8,H*0.15,44,0,7); ctx.fill();
+
+    // far parallax items (buildings behind, trees in front of them)
+    scenery.items.filter(it=>it.layer===0).forEach(it=> drawBuilding(it, horizon));
+    // rolling hill band
+    ctx.fillStyle='#bfe3a8';
+    ctx.beginPath();
+    ctx.moveTo(0,horizon);
+    const hillH = 46;
+    for(let x=0;x<=W;x+=40){
+      const y = horizon - hillH*0.5 - Math.sin((x+time*30)/120)*hillH*0.4;
+      ctx.lineTo(x,y);
+    }
+    ctx.lineTo(W,horizon); ctx.closePath(); ctx.fill();
+    scenery.items.filter(it=>it.layer===1).forEach(it=> drawTree(it, horizon));
+
+    // water strip just above ground
+    const wy = horizon - 18;
+    ctx.fillStyle='rgba(120,195,225,.55)';
+    ctx.fillRect(0, wy, W, 18);
+    ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=2;
+    for(let x=0;x<W;x+=26){
+      const off = (time*40 + x) ;
+      ctx.beginPath();
+      ctx.arc(x + (off%26), wy+9 + Math.sin(off/30)*2, 5, 0.15*Math.PI, 0.85*Math.PI);
+      ctx.stroke();
+    }
+  }
+
+  function drawBuilding(b, horizon){
+    const y = horizon - b.h;
+    ctx.fillStyle=b.hue;
+    roundRect(b.x, y, b.w, b.h, 4); ctx.fill();
+    // roof cap
+    ctx.fillStyle='rgba(0,0,0,.06)';
+    ctx.fillRect(b.x, y, b.w, 6);
+    if(b.win){
+      ctx.fillStyle='rgba(255,250,225,.8)';
+      for(let wy=y+10; wy<horizon-8; wy+=16){
+        for(let wx=b.x+6; wx<b.x+b.w-8; wx+=12){
+          ctx.fillRect(wx,wy,6,8);
+        }
+      }
+    }
+  }
+  function drawTree(t, horizon){
+    const x=t.x, baseY=horizon;
+    // trunk
+    ctx.fillStyle='#9c7a52';
+    ctx.fillRect(x-4, baseY-t.h*0.5, 8, t.h*0.5);
+    // canopy (three puffs)
+    ctx.fillStyle=t.tint;
+    ctx.beginPath();
+    ctx.arc(x, baseY - t.h*0.55, t.h*0.34, 0,7);
+    ctx.arc(x - t.h*0.28, baseY - t.h*0.42, t.h*0.26, 0,7);
+    ctx.arc(x + t.h*0.28, baseY - t.h*0.42, t.h*0.26, 0,7);
+    ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.18)';
+    ctx.beginPath(); ctx.arc(x - t.h*0.1, baseY - t.h*0.62, t.h*0.16,0,7); ctx.fill();
+  }
+
+  // ----- bamboo stalk -----
+  function drawBambooSeg(x, top, bottom){
+    const h = bottom-top;
+    const g = ctx.createLinearGradient(x,0,x+PIPE_W,0);
+    g.addColorStop(0,'#a6e093'); g.addColorStop(.45,'#7cc36a'); g.addColorStop(1,'#56a047');
+    ctx.fillStyle=g; roundRect(x,top,PIPE_W,h,12); ctx.fill();
+    // segment nodes
+    const nodeGap=58;
+    for(let ny=top+30; ny<bottom-12; ny+=nodeGap){
+      ctx.fillStyle='#5aa54b';
+      roundRect(x-4, ny-6, PIPE_W+8, 12, 6); ctx.fill();
+      ctx.strokeStyle='rgba(40,90,40,.35)'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(x+4,ny); ctx.lineTo(x+PIPE_W-4,ny); ctx.stroke();
+    }
+    // glossy highlight + soft right shade
+    ctx.fillStyle='rgba(255,255,255,.30)'; roundRect(x+10,top+8,8,h-16,4); ctx.fill();
+    ctx.fillStyle='rgba(40,90,40,.14)'; roundRect(x+PIPE_W-16,top+8,7,h-16,4); ctx.fill();
+    // leaves at open end
+    ctx.fillStyle='#67bd55';
+    const ly = (top===0)? bottom : top;
+    ctx.save(); ctx.translate(x+PIPE_W/2, ly);
+    for(const a of [-0.7,0.0,0.7]){
+      ctx.save(); ctx.rotate(a);
+      ctx.beginPath(); ctx.ellipse(0,(top===0?16:-16),8,24,0,0,7); ctx.fill(); ctx.restore();
+    }
+    ctx.restore();
+  }
+  function drawBamboo(o){
+    drawBambooSeg(o.x, 0, o.gapY);
+    drawBambooSeg(o.x, o.gapY+GAP, H-GROUND_H);
+  }
+
+  function drawLadybug(cx, cy, r){
+    ctx.save(); ctx.translate(cx,cy);
+    // shadow
+    ctx.fillStyle='rgba(0,0,0,.10)';
+    ctx.beginPath(); ctx.ellipse(0,r*0.7,r*0.9,r*0.35,0,0,7); ctx.fill();
+    // body
+    ctx.fillStyle='#e0473b';
+    ctx.beginPath(); ctx.ellipse(0,0,r,r*0.92,0,0,7); ctx.fill();
+    // wing split
+    ctx.strokeStyle='#2a2424'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(0,-r*0.9); ctx.lineTo(0,r*0.9); ctx.stroke();
+    // head
+    ctx.fillStyle='#2a2424';
+    ctx.beginPath(); ctx.arc(0,-r*0.78,r*0.42,0,7); ctx.fill();
+    // spots
+    ctx.fillStyle='#2a2424';
+    const sp=[[-0.45,-0.2],[0.45,-0.2],[-0.4,0.4],[0.4,0.4],[0,0.15]];
+    sp.forEach(s=>{ ctx.beginPath(); ctx.arc(s[0]*r, s[1]*r, r*0.16,0,7); ctx.fill(); });
+    // eyes
+    ctx.fillStyle='#fff';
+    ctx.beginPath(); ctx.arc(-r*0.18,-r*0.82,r*0.12,0,7); ctx.arc(r*0.18,-r*0.82,r*0.12,0,7); ctx.fill();
+    ctx.restore();
+  }
+  function drawLadybugs(o){
+    // thin guide stalks so the gap is readable, then bugs on top
+    ctx.fillStyle='rgba(120,170,90,.30)';
+    roundRect(o.x+PIPE_W*0.32,0,PIPE_W*0.36,o.gapY,8); ctx.fill();
+    roundRect(o.x+PIPE_W*0.32,o.gapY+GAP,PIPE_W*0.36,(H-GROUND_H)-(o.gapY+GAP),8); ctx.fill();
+    const cx=o.x+PIPE_W/2;
+    o.bugs.forEach(b=> drawLadybug(cx+b.ox, b.oy + Math.sin(time*2.4+b.ph)*5, b.r));
+    const botStart=o.gapY+GAP;
+    o.botBugs.forEach((b,i)=> drawLadybug(cx+b.ox, botStart + 16 + i*30 + Math.sin(time*2.4+b.ph)*5, b.r));
+  }
+
+  function drawAnt(cx, cy, r, ph){
+    ctx.save(); ctx.translate(cx,cy);
+    ctx.strokeStyle='#3a2a22'; ctx.fillStyle='#4a3328';
+    // legs
+    ctx.lineWidth=2; ctx.lineCap='round';
+    const sw=Math.sin(ph)*0.25;
+    for(const s of [-1,1]){
+      for(let i=0;i<3;i++){
+        ctx.beginPath();
+        ctx.moveTo(0, -r*0.3 + i*r*0.4);
+        ctx.lineTo(s*r*1.3, -r*0.3 + i*r*0.4 + sw*r*s + r*0.5);
+        ctx.stroke();
+      }
+    }
+    // 3 body segments
+    ctx.beginPath(); ctx.arc(0,-r*0.9,r*0.5,0,7); ctx.fill();   // head
+    ctx.beginPath(); ctx.arc(0,0,r*0.45,0,7); ctx.fill();        // thorax
+    ctx.beginPath(); ctx.arc(0,r*0.95,r*0.6,0,7); ctx.fill();    // abdomen
+    // antennae
+    ctx.beginPath(); ctx.moveTo(-r*0.2,-r*1.2); ctx.lineTo(-r*0.6,-r*1.7);
+    ctx.moveTo(r*0.2,-r*1.2); ctx.lineTo(r*0.6,-r*1.7); ctx.stroke();
+    ctx.restore();
+  }
+  function drawAnts(o){
+    // solid earthy columns top and bottom, with ants marching along the inner edge
+    const grad = ctx.createLinearGradient(o.x,0,o.x+PIPE_W,0);
+    grad.addColorStop(0,'#caa46f'); grad.addColorStop(.5,'#b5894f'); grad.addColorStop(1,'#9c733f');
+    ctx.fillStyle=grad;
+    roundRect(o.x,0,PIPE_W,o.gapY,10); ctx.fill();
+    roundRect(o.x,o.gapY+GAP,PIPE_W,(H-GROUND_H)-(o.gapY+GAP),10); ctx.fill();
+    // ants walking on the lip of each column
+    const cx=o.x+PIPE_W/2;
+    const r=7;
+    const march=(time*60)%24;
+    ctx.save();
+    for(let i=0;i<3;i++){
+      drawAnt(o.x+12+i*22, o.gapY-12, r, o.antPhase+time*8+i);
+    }
+    for(let i=0;i<3;i++){
+      drawAnt(o.x+12+i*22, o.gapY+GAP+12, r, o.antPhase+time*8+i+1.5);
+    }
+    ctx.restore();
+  }
+
+  function drawSpider(o){
+    const cx = o.x + PIPE_W/2;
+    const y = o.spider.drop;
+    const r = o.spider.r;
+    // web line from ceiling
+    ctx.strokeStyle='rgba(255,255,255,.7)'; ctx.lineWidth=1.6;
+    ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,y-r+2); ctx.stroke();
+    ctx.save(); ctx.translate(cx,y);
+    const legSwing=Math.sin(time*6+o.spider.phase)*0.3;
+    ctx.strokeStyle='#3a2f3a'; ctx.lineWidth=2.4; ctx.lineCap='round';
+    for(const side of [-1,1]){
+      for(let i=0;i<4;i++){
+        const ay=-6+i*5, spread=(10+i*1.5)*side;
+        ctx.beginPath(); ctx.moveTo(side*7,ay);
+        ctx.quadraticCurveTo(spread, ay-4+legSwing*6*side, spread*1.3, ay+7); ctx.stroke();
+      }
+    }
+    ctx.fillStyle='#473b4a'; ctx.beginPath(); ctx.ellipse(0,6,13,14,0,0,7); ctx.fill();
+    ctx.fillStyle='#6b5870'; ctx.beginPath(); ctx.ellipse(0,6,6,8,0,0,7); ctx.fill();
+    ctx.fillStyle='#3a2f3a'; ctx.beginPath(); ctx.arc(0,-6,9,0,7); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(-3.5,-7,3.2,0,7); ctx.arc(3.5,-7,3.2,0,7); ctx.fill();
+    ctx.fillStyle='#1d1820'; ctx.beginPath(); ctx.arc(-3,-6.5,1.6,0,7); ctx.arc(4,-6.5,1.6,0,7); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawObstacle(o){
+    if(o.type==='bamboo') drawBamboo(o);
+    else if(o.type==='spider') drawSpider(o);
+    else if(o.type==='ladybugs') drawLadybugs(o);
+    else if(o.type==='ants') drawAnts(o);
+  }
+
+  function drawGround(){
+    const gy=H-GROUND_H;
+    const g=ctx.createLinearGradient(0,gy,0,H);
+    g.addColorStop(0,'#e3c79b'); g.addColorStop(1,'#d4b582');
+    ctx.fillStyle=g; ctx.fillRect(0,gy,W,GROUND_H);
+    ctx.fillStyle='#c2a06f'; ctx.fillRect(0,gy,W,8);
+    ctx.fillStyle='#9bd98a';
+    const off=(time*speed)%24;
+    for(let x=-off; x<W; x+=24){
+      ctx.beginPath(); ctx.moveTo(x,gy); ctx.lineTo(x+6,gy-9); ctx.lineTo(x+12,gy); ctx.fill();
+    }
+  }
+
+  function drawEllie(){
+    const e=ellie;
+    const beat=Math.sin(time*9)*0.35 + e.flap*0.9;
+    ctx.save(); ctx.translate(e.x,e.y); ctx.rotate(e.rot);
+    // far ear
+    ctx.save(); ctx.translate(-2,-4); ctx.rotate(-0.15-beat*0.9);
+    let g1=ctx.createLinearGradient(-40,0,0,0); g1.addColorStop(0,'#9cbfd9'); g1.addColorStop(1,'#b6cfe6');
+    ctx.fillStyle=g1; ctx.beginPath(); ctx.ellipse(-26,2,26,32,0.25,0,7); ctx.fill();
+    ctx.fillStyle='rgba(217,182,201,.5)'; ctx.beginPath(); ctx.ellipse(-24,4,14,20,0.25,0,7); ctx.fill();
+    ctx.restore();
+    // body
+    ctx.fillStyle='#c9dcee'; ctx.beginPath(); ctx.ellipse(0,4,24,22,0,0,7); ctx.fill();
+    // head
+    ctx.fillStyle='#cfe0f0'; ctx.beginPath(); ctx.arc(9,-7,19,0,7); ctx.fill();
+    // trunk
+    ctx.strokeStyle='#cfe0f0'; ctx.lineWidth=11; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(21,-1); ctx.quadraticCurveTo(35,5,31,18); ctx.stroke();
+    // eye
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(15,-11,6,0,7); ctx.fill();
+    ctx.fillStyle='#3a3340'; ctx.beginPath(); ctx.arc(16,-10,3,0,7); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(17.5,-11.5,1.1,0,7); ctx.fill();
+    ctx.fillStyle='rgba(240,160,170,.55)'; ctx.beginPath(); ctx.arc(6,1,5,0,7); ctx.fill();
+    // feet
+    ctx.fillStyle='#b6cfe6'; ctx.beginPath(); ctx.ellipse(-8,23,7,5,0,0,7); ctx.ellipse(8,23,7,5,0,0,7); ctx.fill();
+    // near ear (big flapping wing)
+    ctx.save(); ctx.translate(4,-6); ctx.rotate(0.15+beat);
+    let g2=ctx.createLinearGradient(-34,0,4,0); g2.addColorStop(0,'#aecbe4'); g2.addColorStop(1,'#c9dcee');
+    ctx.fillStyle=g2; ctx.beginPath(); ctx.ellipse(-22,4,28,34,-0.2,0,7); ctx.fill();
+    ctx.fillStyle='#d9b6c9'; ctx.beginPath(); ctx.ellipse(-20,6,16,22,-0.2,0,7); ctx.fill();
+    ctx.restore();
+    ctx.restore();
+  }
+
+  // ===================== COLLISION =====================
+  function circleHitsColumns(o, topSolidTo, botSolidFrom){
+    const e=ellie;
+    if(e.x + e.r*0.7 > o.x && e.x - e.r*0.7 < o.x + PIPE_W){
+      if(topSolidTo!=null && e.y - e.r*0.8 < topSolidTo) return true;
+      if(botSolidFrom!=null && e.y + e.r*0.8 > botSolidFrom) return true;
+    }
+    return false;
+  }
+  function collides(){
+    const e=ellie;
+    if(e.y + e.r > H-GROUND_H){ e.y=H-GROUND_H-e.r; return true; }
+    if(e.y - e.r < 0) return true;
+    for(const o of obstacles){
+      if(o.type==='bamboo' || o.type==='ants'){
+        if(circleHitsColumns(o, o.gapY, o.gapY+GAP)) return true;
+      } else if(o.type==='ladybugs'){
+        // bottom column solid; top formed by bugs (check each bug circle) ; also bottom bugs
+        if(circleHitsColumns(o, o.gapY, o.gapY+GAP)) return true;
+      } else if(o.type==='spider'){
+        // top open; bottom stalk solid; plus spider body
+        if(circleHitsColumns(o, null, o.gapY+GAP)) return true;
+        const cx=o.x+PIPE_W/2, dy=e.y-o.spider.drop, dx=e.x-cx;
+        if(dx*dx+dy*dy < (e.r*0.7+o.spider.r)*(e.r*0.7+o.spider.r)) return true;
+      }
+    }
+    return false;
+  }
+
+  // ===================== UPDATE =====================
+  function update(dt){
+    time += dt;
+    recycleScenery(dt);
+
+    if(state==='playing'){
+      speed += 6*dt; // gentle ramp
+      const e=ellie;
+      e.vy += GRAV*dt;
+      e.y  += e.vy*dt;
+      e.rot = Math.max(-0.5, Math.min(1.1, e.vy*0.0011));
+      e.flap = Math.max(0, e.flap - dt*4);
+
+      obstacles.forEach(o=>{
+        o.x -= speed*dt;
+        if(o.type==='spider'){
+          const s=o.spider;
+          const t=(Math.sin(time*s.freq*2*Math.PI + s.phase)+1)/2;
+          s.drop = s.dropMin + t*(s.dropMax-s.dropMin);
+        }
+        if(!o.scored && o.x + PIPE_W < e.x){ o.scored=true; score++; hud.textContent=score; }
+      });
+      if(obstacles.length && obstacles[0].x < -PIPE_W-40){
+        obstacles.shift();
+        const last=obstacles[obstacles.length-1].x;
+        addObstacle(last + SPACING);
+      }
+      if(collides()) gameOver();
+    } else if(state==='over'){
+      const e=ellie;
+      if(e.y+e.r < H-GROUND_H){ e.vy+=GRAV*dt; e.y+=e.vy*dt; e.rot=Math.min(1.4,e.rot+dt*2); }
+    } else if(state==='ready'){
+      ellie.y = H*0.45 + Math.sin(time*2.2)*10;
+      ellie.rot = Math.sin(time*2.2)*0.08;
+    }
+  }
+
+  function render(){
+    ctx.clearRect(0,0,W,H);
+    drawBackground();
+    obstacles.forEach(drawObstacle);
+    drawGround();
+    drawEllie();
+  }
+
+  // ===================== MAIN LOOP (delta time, capped) =====================
+  let lastT = performance.now();
+  function loop(now){
+    let dt=(now-lastT)/1000; lastT=now;
+    if(dt>0.05) dt=0.05;          // clamp big gaps (tab switches) for stability
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+  reset();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
