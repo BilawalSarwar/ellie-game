@@ -64,12 +64,21 @@
     font-family:'Baloo 2';font-weight:800;font-size:46px;color:#fff;
     text-shadow:0 3px 0 #d98b3e,0 5px 10px rgba(0,0,0,.3);
   }
+  #muteBtn{
+    position:absolute;top:14px;right:14px;z-index:6;
+    width:44px;height:44px;padding:0;border:none;cursor:pointer;
+    font-size:22px;line-height:44px;border-radius:50%;
+    background:rgba(255,251,243,.85);color:#4a3b3b;
+    box-shadow:0 4px 0 rgba(0,0,0,.12);
+  }
+  #muteBtn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.12);}
 </style>
 </head>
 <body>
 <div id="wrap">
   <canvas id="game"></canvas>
   <div id="hud" class="hidden">0</div>
+  <button id="muteBtn" aria-label="toggle sound">🔊</button>
 
   <div id="startScreen" class="overlay">
     <div class="title">Ellie's<br>Bamboo Flight<small>🐘 a cute flappy adventure 🎋</small></div>
@@ -103,6 +112,102 @@
   const retryBtn = document.getElementById('retryBtn');
   const finalScore = document.getElementById('finalScore');
   const bestScoreEl = document.getElementById('bestScore');
+  const muteBtn = document.getElementById('muteBtn');
+
+  // ===================== AUDIO ENGINE (procedural, no files) =====================
+  const Audio = (() => {
+    let actx = null, master = null, musicGain = null, sfxGain = null;
+    let muted = false, started = false, musicTimer = null, step = 0;
+
+    function ensure(){
+      if(actx) return;
+      try{
+        actx = new (window.AudioContext || window.webkitAudioContext)();
+        master = actx.createGain(); master.gain.value = 0.9; master.connect(actx.destination);
+        musicGain = actx.createGain(); musicGain.gain.value = 0.18; musicGain.connect(master);
+        sfxGain = actx.createGain(); sfxGain.gain.value = 0.6; sfxGain.connect(master);
+      }catch(e){ actx = null; }
+    }
+    function resume(){ ensure(); if(actx && actx.state === 'suspended') actx.resume(); }
+
+    // generic short tone with envelope
+    function tone(freq, dur, type='sine', vol=0.5, dest=null, glideTo=null){
+      if(!actx || muted) return;
+      const o = actx.createOscillator();
+      const g = actx.createGain();
+      o.type = type; o.frequency.value = freq;
+      if(glideTo) o.frequency.exponentialRampToValueAtTime(glideTo, actx.currentTime + dur);
+      const t = actx.currentTime;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(dest || sfxGain);
+      o.start(t); o.stop(t + dur + 0.02);
+    }
+    // filtered noise burst (for crashes / wing whoosh)
+    function noise(dur, vol=0.4, freq=1200, q=1){
+      if(!actx || muted) return;
+      const n = Math.floor(actx.sampleRate * dur);
+      const buf = actx.createBuffer(1, n, actx.sampleRate);
+      const d = buf.getChannelData(0);
+      for(let i=0;i<n;i++) d[i] = (Math.random()*2-1) * (1 - i/n);
+      const src = actx.createBufferSource(); src.buffer = buf;
+      const bp = actx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=freq; bp.Q.value=q;
+      const g = actx.createGain(); g.gain.value = vol;
+      src.connect(bp); bp.connect(g); g.connect(sfxGain);
+      src.start();
+    }
+
+    // ---- named sound effects ----
+    const sfx = {
+      flap(){ noise(0.12, 0.18, 700, 0.8); tone(420, 0.1, 'sine', 0.12, null, 620); },
+      score(){ tone(880, 0.13, 'triangle', 0.4, null, 1320); },
+      bamboo(){ tone(300, 0.14, 'square', 0.18); tone(150, 0.16, 'sine', 0.2); }, // woody knock
+      ladybugs(){ tone(1200, 0.08,'sine',0.22,null,1700); setTimeout(()=>tone(1500,0.07,'sine',0.18,null,1900),60); }, // chirp
+      ants(){ for(let i=0;i<3;i++) setTimeout(()=>tone(2200,0.03,'square',0.10),i*45); }, // tiny ticks
+      spider(){ tone(200, 0.25,'sawtooth',0.18,null,90); }, // web twang
+      hit(){ noise(0.3, 0.5, 240, 0.6); tone(180,0.3,'square',0.3,null,70); }
+    };
+
+    // ---- gentle looping background music (pentatonic, soft) ----
+    const melody = [0,3,5,7,10,7,5,3, 0,5,7,10,12,10,7,5];
+    const root = 196; // G3
+    function scaleFreq(semi){ return root * Math.pow(2, semi/12); }
+    function tick(){
+      if(actx && !muted && started){
+        const n = melody[step % melody.length];
+        // soft lead
+        tone(scaleFreq(n)*2, 0.5, 'triangle', 0.16, musicGain, scaleFreq(n)*2);
+        // soft bass every other beat
+        if(step % 2 === 0) tone(scaleFreq(n)/2, 0.7, 'sine', 0.22, musicGain);
+        step++;
+      }
+    }
+    function startMusic(){
+      if(musicTimer) return;
+      tick();
+      musicTimer = setInterval(tick, 420);
+    }
+    function stopMusic(){ if(musicTimer){ clearInterval(musicTimer); musicTimer = null; } }
+
+    return {
+      unlock(){ resume(); if(!started){ started = true; if(!muted) startMusic(); } },
+      play(name){ resume(); if(sfx[name]) sfx[name](); },
+      toggleMute(){
+        muted = !muted;
+        if(muted){ stopMusic(); }
+        else { resume(); if(started) startMusic(); }
+        return muted;
+      },
+      get muted(){ return muted; }
+    };
+  })();
+
+  muteBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const m = Audio.toggleMute();
+    muteBtn.textContent = m ? '🔇' : '🔊';
+  });
 
   let W, H, DPR, GROUND_H;
   function resize(){
@@ -189,7 +294,7 @@
 
     if(type === 'spider'){
       const dropMin = 36;
-      const dropMax = gapY + GAP*0.45;
+      const dropMax = gapY + GAP*0.35;   // never dives deep into the gap; leaves clear room below
       // Two kinds of spider:
       //  - 'glide': drifts slowly up and down (most common, gentle)
       //  - 'fall' : hangs near the top, then suddenly drops, pauses, reels back up
@@ -239,15 +344,17 @@
   }
   function flap(){
     if(state === 'ready'){ start(); return; }
-    if(state === 'playing'){ ellie.vy = FLAP; ellie.flap = 1; }
+    if(state === 'playing'){ ellie.vy = FLAP; ellie.flap = 1; Audio.play('flap'); }
   }
   function start(){
+    Audio.unlock();
     reset(); state='playing';
     startScreen.classList.add('hidden');
     overScreen.classList.add('hidden');
     hud.classList.remove('hidden');
   }
   function gameOver(){
+    Audio.play('hit');
     state='over'; best=Math.max(best,score);
     finalScore.textContent = score;
     bestScoreEl.textContent = 'Best: '+best;
@@ -542,10 +649,14 @@
         // bottom column solid; top formed by bugs (check each bug circle) ; also bottom bugs
         if(circleHitsColumns(o, o.gapY, o.gapY+GAP)) return true;
       } else if(o.type==='spider'){
-        // top open; bottom stalk solid; plus spider body
+        // top is open; only the bottom stalk and the spider's VISIBLE body are solid.
         if(circleHitsColumns(o, null, o.gapY+GAP)) return true;
-        const cx=o.x+PIPE_W/2, dy=e.y-o.spider.drop, dx=e.x-cx;
-        if(dx*dx+dy*dy < (e.r*0.7+o.spider.r)*(e.r*0.7+o.spider.r)) return true;
+        // the drawn body sits ~6px below `drop`; use a snug radius so flying clearly
+        // under the spider never counts as a hit (legs are decorative, not solid).
+        const cx=o.x+PIPE_W/2, by=o.spider.drop+6;
+        const dx=e.x-cx, dy=e.y-by;
+        const hitDist = e.r*0.55 + o.spider.r*0.7;
+        if(dx*dx+dy*dy < hitDist*hitDist) return true;
       }
     }
     return false;
@@ -589,7 +700,11 @@
             }
           }
         }
-        if(!o.scored && o.x + PIPE_W < e.x){ o.scored=true; score++; hud.textContent=score; }
+        if(!o.scored && o.x + PIPE_W < e.x){
+          o.scored=true; score++; hud.textContent=score;
+          Audio.play('score');
+          Audio.play(o.type);   // bamboo / ladybugs / ants / spider
+        }
       });
       if(obstacles.length && obstacles[0].x < -PIPE_W-40){
         obstacles.shift();
