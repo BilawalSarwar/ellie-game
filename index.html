@@ -518,6 +518,7 @@
   }
 
   function flap(){
+    if(state === 'ready'){ beginPlay(); return; }  // first tap starts the run
     if(state !== 'playing') return;
     const ch=CHARACTERS[charKey];
     if(ch.carried){ ghost.vy = FLAP; ghost.flap = 1; }
@@ -526,10 +527,19 @@
   }
   function startGame(){
     Audio.unlock();
-    reset(); state='playing';
+    reset(); state='ready';            // wait for the first tap before moving
     showScreen(null);
     hud.classList.remove('hidden');
+    pauseBtn.classList.add('hidden');  // no pausing until the run actually begins
+  }
+  function beginPlay(){
+    state='playing';
+    const ch=CHARACTERS[charKey];
+    // give the first flap so the character pops up like the original game
+    if(ch.carried){ ghost.vy = FLAP; ghost.flap = 1; }
+    else { ellie.vy = (ch.flap||FLAP); ellie.flap = 1; }
     pauseBtn.classList.remove('hidden');
+    Audio.play('flap');
   }
   function pauseGame(){
     if(state!=='playing') return;
@@ -590,12 +600,12 @@
 
   // ---- input ----
   function press(e){
-    // tapping the canvas only flaps during play; menus use their own buttons
-    if(state==='playing'){ e.preventDefault(); flap(); }
+    // tapping the canvas flaps during play, and the first tap starts a ready run
+    if(state==='playing' || state==='ready'){ e.preventDefault(); flap(); }
   }
   cv.addEventListener('pointerdown', press);
   window.addEventListener('keydown', e=>{
-    if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); if(state==='playing') flap(); }
+    if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); if(state==='playing'||state==='ready') flap(); }
     if(e.code==='Escape'){ if(state==='playing') pauseGame(); else if(state==='paused') resumeGame(); }
   });
 
@@ -628,7 +638,10 @@
       card.addEventListener('click', e=>{
         e.stopPropagation();
         charKey=card.dataset.k; Store.set('char',charKey);
-        renderCharGrid();
+        best = Store.get('best_'+charKey, 0);
+        renderCharGrid();              // show the selection highlight briefly
+        Audio.play('score');
+        setTimeout(()=>showScreen('menu'), 220);  // then pop back to the menu
       });
     });
   }
@@ -1264,6 +1277,21 @@
           gameOver();
         }
       }
+    } else if(state==='ready'){
+      // wait for the first tap: character hovers gently in the middle, nothing scrolls
+      const e=ellie, ch=CHARACTERS[charKey];
+      const hoverY = H*0.45 + Math.sin(time*2.4)*9;
+      if(ch.carried){
+        ghost.y = hoverY - e.string;
+        e.a = Math.sin(time*1.4)*0.10;
+        e.x = ghost.x + Math.sin(e.a)*e.string;
+        e.y = ghost.y + Math.cos(e.a)*e.string;
+        e.rot = e.a*0.5;
+      } else {
+        e.y = hoverY;
+        e.vy = 0;
+        e.rot = Math.sin(time*2.4)*0.06;
+      }
     } else if(state==='over'){
       // character tumbles down; if it was carried, the ghost drifts up sadly
       const e=ellie;
@@ -1308,6 +1336,21 @@
     drawEllie();
     if(carried && state!=='over'){ drawGhost(); }
     drawPowerHUD();
+    if(state==='ready') drawReadyHint();
+  }
+
+  function drawReadyHint(){
+    const a=0.6+Math.sin(time*3)*0.3;
+    ctx.save();
+    ctx.globalAlpha=a;
+    ctx.fillStyle='#fff';
+    ctx.font="700 26px 'Baloo 2', sans-serif";
+    ctx.textAlign='center';
+    ctx.shadowColor='rgba(0,0,0,.35)'; ctx.shadowBlur=8; ctx.shadowOffsetY=2;
+    ctx.fillText('Tap to start', W/2, H*0.30);
+    ctx.font="600 16px 'Fredoka', sans-serif";
+    ctx.fillText('▲ flap', W/2, H*0.30+28);
+    ctx.restore();
   }
 
   // ===================== MAIN LOOP (fixed-step accumulator) =====================
